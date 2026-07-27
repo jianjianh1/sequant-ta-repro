@@ -35,6 +35,19 @@ inline std::vector<std::size_t> adaptive_tile_sizes(
   // for the native SeQuant generator's ~500-statement whole-residual
   // computation. Not wired into any other tool's behavior unless the env
   // var is explicitly set.
+  //
+  // UPDATE (2026-07-26): the default of 8 was the confirmed optimum ONLY
+  // relative to an UNPINNED process (the original sweep predates CPU
+  // affinity pinning). Once the process is pinned to physical cores
+  // (`taskset -c <physical-core-list>`) AND MAD_NUM_THREADS matches the
+  // physical core count, the optimum SHIFTS COARSER --
+  // SPTC_TILES_PER_DIM=6 then beats every value from 5 to 16 (~24-37%
+  // faster than the old default=8 at the same pinned config); 4 still
+  // times out (dense-intermediate-blowup risk on pair-key-adjacent tiling
+  // still applies at that granularity). This mirrors MAD_NUM_THREADS's
+  // own optimum flipping after pinning -- these knobs interact, so
+  // re-sweep this one too after any further scheduling-level change
+  // rather than assuming today's optimum is stable.
   if (const char* v = std::getenv("SPTC_TILES_PER_DIM")) {
     std::size_t n = static_cast<std::size_t>(std::atoi(v));
     if (n > 0) target_tiles_per_dim = n;

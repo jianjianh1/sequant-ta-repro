@@ -38,7 +38,7 @@ Leaf data + the known-correct reference checksums live in the sibling
 repo, or point at wherever you keep it):
 
 ```bash
-export SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 SPTC_TRIALS=3 SPTC_WARMUP=1
+export SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 SPTC_TILES_PER_DIM=6 SPTC_TRIALS=3 SPTC_WARMUP=1
 taskset -c 0-7 ./build/ta_sequant_native_residual_main \
   ../mpqc-benchmark/traces/checksum-run/sptc_coo_iter1
 ```
@@ -149,22 +149,36 @@ it doesn't only live in a chat transcript:
   MPQC's real production configuration (PaRSEC by default). See
   `mpqc-benchmark`'s README for why that still makes this comparison
   meaningful.
-- **Tile granularity** (`SPTC_TILES_PER_DIM` in `ta_builder.h`, default
-  8): swept 2/4/8/16 — coarser (2, 4) timed out, finer (16) was clearly
-  worse. The default is already the local optimum; not a further lever.
-- **Net gap vs. real MPQC**: a correctness-gated, trace-independent,
-  fresh side-by-side measurement (both sides on OpenBLAS, single-rank,
-  their own real best settings — MPQC's PaRSEC production defaults vs.
-  this repo's pinned/`MAD_NUM_THREADS=8` config above) puts real MPQC
-  ahead by **~1.89x on T1, ~3.59x on T2, ~3.30x combined** (T1: 0.461s
-  MPQC vs. 0.872s here; T2: 2.254s MPQC vs. 8.082s here). This supersedes
-  an earlier ~2.4x figure that was only a scaled *estimate* from
-  older, cross-phase data — the first genuinely fresh, direct
-  measurement (before the affinity-pinning win above) actually found a
-  *larger* gap (~2.50x/~4.46x/~4.13x), underscoring that this number
-  should be re-measured directly rather than assumed stable across
-  changes. Separately, an even earlier single-data-point reading that
-  looked like a ~0.90x ("we're faster") result was traced to MPQC's
+- **Tile granularity (RE-OPTIMIZED after CPU pinning — supersedes the
+  earlier "8 is optimal" finding)**: the original `SPTC_TILES_PER_DIM`
+  sweep (2/4/8/16, default 8) was run *before* the CPU-affinity-pinning
+  win above existed, and pinning changes the fundamental contention
+  profile enough that the optimum shifts — exactly like
+  `MAD_NUM_THREADS`'s own optimum flipped once pinning was added. Re-swept
+  under `taskset -c 0-7` + `MAD_NUM_THREADS=8`: **`SPTC_TILES_PER_DIM=6`
+  beats every other value from 5 to 16** (4 still times out — the known
+  dense-intermediate-blowup risk on coarser pair-key-adjacent tiling still
+  applies). Also re-confirmed `MAD_NUM_THREADS=8` is *still* optimal at
+  `SPTC_TILES_PER_DIM=6` (swept 6-10 again at the new tile size). Net win
+  over the previous best (pinned, threads=8, tiles=8): **T1 ~37% faster
+  (0.872s → 0.549s), T2 ~23% faster (8.082s → 6.230s)**. New best-known
+  combination: `taskset -c 0-7` + `MAD_NUM_THREADS=8` +
+  `SPTC_TILES_PER_DIM=6` + `SPTC_MAD_WAIT_POLICY=yield`. Checksums
+  re-verified across every configuration in both sweeps (44/44 trials
+  matched the reference). **Lesson for future tuning**: these knobs
+  interact — don't assume an old sweep's optimum still holds after a
+  different knob changes; re-sweep after every real win.
+- **Net gap vs. real MPQC**: with the re-optimized tiling above, real
+  MPQC is now ahead by **~1.26x on T1, ~3.02x on T2, ~2.71x combined**
+  (T1: 0.436s MPQC vs. 0.549s here; T2: 2.064s MPQC vs. 6.230s here) —
+  down from ~1.89x/~3.59x/~3.30x before this round, which itself
+  superseded an earlier ~2.4x figure that was only a scaled *estimate*
+  from older, cross-phase data. T1 in particular has closed dramatically
+  — from ~2.50x (first fresh direct measurement) to ~1.26x now. This
+  number has moved substantially across this investigation's own rounds;
+  don't treat any single reading as final — re-measure directly after any
+  further tuning. Separately, an even earlier single-data-point reading
+  that looked like a ~0.90x ("we're faster") result was traced to MPQC's
   `eval_level` trace computing a real checksum on every intermediate
   step — genuine extra work absent from this repo's own benchmark, which
   only checksums the final result — and was correctly not trusted over
