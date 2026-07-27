@@ -38,10 +38,16 @@ Leaf data + the known-correct reference checksums live in the sibling
 repo, or point at wherever you keep it):
 
 ```bash
-export SPTC_TRIALS=3 SPTC_WARMUP=1
-./build/ta_sequant_native_residual_main \
+export SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 SPTC_TRIALS=3 SPTC_WARMUP=1
+taskset -c 0-7 ./build/ta_sequant_native_residual_main \
   ../mpqc-benchmark/traces/checksum-run/sptc_coo_iter1
 ```
+
+(`taskset -c 0-7` pins to this box's 8 physical cores, avoiding SMT
+siblings — see "Key validated performance findings" below for why this
+combination, not just `MAD_NUM_THREADS`, is the current best-known
+config. Adjust the core list/thread count to match your own machine's
+physical core count.)
 
 Expected checksums (must match exactly, modulo last-few-ULP float
 reassociation noise from CSE restructuring):
@@ -87,6 +93,42 @@ it doesn't only live in a chat transcript:
   profiling that this is a contention effect (fewer threads on the same
   shared spinlock-protected task queue), not a change in the
   scheduling/compute balance.
+- **CPU affinity pinning (supersedes the thread-count finding above)**:
+  a follow-up 8-way sweep of `{unpinned, taskset -c 0-7} x
+  MAD_NUM_THREADS in {7,8,9,10}` found that pinning the whole process to
+  the 8 physical cores (`taskset -c 0-7`, avoiding SMT siblings) beats
+  every unpinned configuration at every thread count, and — once
+  pinned — the OPTIMUM FLIPS from more threads to fewer: `MAD_NUM_THREADS=8`
+  (exactly the physical core count) now beats 9 and 10, whereas unpinned,
+  10 beat 7-9. Interpretation: unpinned, extra threads were compensating
+  for OS scheduling/migration noise; pinning removes that noise, so
+  over-provisioning threads past the physical core count just re-adds
+  contention. Net win over the previous best (unpinned, 10 threads):
+  T1 ~24% faster (1.154s → 0.872s), T2 ~20% faster (10.047s → 8.082s).
+  Motivated directly by a fresh `perf` profile showing T1's wall-time is
+  ~50%+ kernel-side `sched_yield`/scheduling machinery (almost no real
+  compute visible in the top functions) — proportionally *worse* than
+  T2's ~20-25% scheduling share (T2's profile clearly shows real compute,
+  e.g. `fused_scale_t_x_tot_inplace` on `ArenaTensor` tiles, at ~21%
+  self-time). That asymmetry is itself still unexplained — it does NOT
+  simply mean T2 is more efficient than T1 relative to real MPQC (see the
+  "Net gap" bullet below, where T2's ratio is still worse) — confirming
+  it would need a comparably fresh, per-residual profile of real MPQC's
+  own PaRSEC execution, which hasn't been done.
+- **Real MPQC tiling for tensor-of-tensor arrays — tried, hit a genuine
+  TiledArray bug, not adopted**: `ta_builder.h`'s `real_tiling_sidecar`
+  mechanism (opt-in, loads MPQC's own coarser tile boundaries instead of
+  forcing pair-key dims to tile size 1) was wired up end-to-end and
+  tested on real ethane data. Result: a heap-buffer-overflow (confirmed
+  via AddressSanitizer) inside TiledArray's `SparseShape` destruction
+  path, triggered by MADNESS's asynchronous cross-thread lazy-deletion
+  whenever a tensor-of-tensor array's outer tiling spans more than one
+  occupied pair per tile — a different, previously-undiscovered bug from
+  the one the tile-size-1 default already guards against. Looks like a
+  genuine TiledArray/MADNESS-side issue on the pinned `84411a6` commit,
+  not something fixable in this repo — see `ta_builder.h`'s own comment
+  for the full diagnosis. Don't re-attempt without first confirming a
+  newer TiledArray commit fixes it.
 - **Cross-term common-subexpression elimination**: SeQuant ships a
   previously-unused primitive, `sequant::opt::eliminate_common_subexpressions()`
   (`core/optimize/common_subexpression_elimination.hpp`), that hoists
@@ -110,12 +152,20 @@ it doesn't only live in a chat transcript:
 - **Tile granularity** (`SPTC_TILES_PER_DIM` in `ta_builder.h`, default
   8): swept 2/4/8/16 — coarser (2, 4) timed out, finer (16) was clearly
   worse. The default is already the local optimum; not a further lever.
-- **Net gap vs. real MPQC**: after all of the above, real MPQC (PaRSEC,
-  its actual production configuration) is still faster than this native
-  reproduction by roughly ~2.4x on the real ethane workload. An earlier
-  single-data-point reading that looked like a ~0.90x ("we're faster")
-  result was traced to MPQC's `eval_level` trace computing a real
-  checksum on every intermediate step — genuine extra work absent from
-  this repo's own benchmark, which only checksums the final result — and
-  was not trusted over the many independently-validated real speedups
-  above.
+- **Net gap vs. real MPQC**: a correctness-gated, trace-independent,
+  fresh side-by-side measurement (both sides on OpenBLAS, single-rank,
+  their own real best settings — MPQC's PaRSEC production defaults vs.
+  this repo's pinned/`MAD_NUM_THREADS=8` config above) puts real MPQC
+  ahead by **~1.89x on T1, ~3.59x on T2, ~3.30x combined** (T1: 0.461s
+  MPQC vs. 0.872s here; T2: 2.254s MPQC vs. 8.082s here). This supersedes
+  an earlier ~2.4x figure that was only a scaled *estimate* from
+  older, cross-phase data — the first genuinely fresh, direct
+  measurement (before the affinity-pinning win above) actually found a
+  *larger* gap (~2.50x/~4.46x/~4.13x), underscoring that this number
+  should be re-measured directly rather than assumed stable across
+  changes. Separately, an even earlier single-data-point reading that
+  looked like a ~0.90x ("we're faster") result was traced to MPQC's
+  `eval_level` trace computing a real checksum on every intermediate
+  step — genuine extra work absent from this repo's own benchmark, which
+  only checksums the final result — and was correctly not trusted over
+  independently-validated real speedups.

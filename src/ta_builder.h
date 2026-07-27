@@ -247,6 +247,33 @@ inline RealTilingSpec load_real_tiling_spec(const std::string& path) {
 /// pair key, the virtual index's raw ("global") values form a *contiguous*
 /// range, so `a_local = a_global - min_a_for_pair` needs no sidecar file —
 /// derived here from one scan of the COO data alone.
+///
+/// UPDATE (2026-07-26, performance-parity investigation): actually tried
+/// `real_tiling_sidecar` end-to-end on ethane's c2_tot (real MPQC tile
+/// boundaries generated via mpqc-benchmark's tns-to-sptc-coo.py, grouping
+/// 3-4 pairs/tile per MPQC's own production tiling) to test whether
+/// coarser ToT tiling closes some of the ~2.5x/4.5x wall-time gap vs. real
+/// MPQC. Result: a SECOND, DISTINCT crash -- `AddressSanitizer: heap-
+/// buffer-overflow` inside `Eigen::internal::handmade_aligned_free`,
+/// triggered when a `SparseShape<float>`'s internal tile-norms `Tensor`
+/// (this function's own `tile_norms`/`sp_shape`, a few lines below) gets
+/// destroyed via MADNESS's asynchronous, cross-thread lazy-deletion path
+/// (`WorldGopInterface::lazy_sync_children`/`lazy_deleter`) -- allocated on
+/// the main thread, freed on a MADNESS worker thread, and by then the
+/// aligned allocator's own bookkeeping reads as corrupted. This is NOT the
+/// same bug the tile-size-1 restriction above guards against (that one was
+/// a per-position ragged-inner-Range issue inside `TA::einsum`; this one
+/// is in `SparseShape`'s interaction with cross-thread deferred deletion,
+/// triggered simply by the OUTER array spanning >1 pair per tile at all,
+/// before any contraction even happens). Root-caused via AddressSanitizer
+/// (a plain gdb backtrace only showed a `malloc(): invalid next size`
+/// abort several frames away from the real fault, inside
+/// `ProcGrid::make_row_phase_pmap`). Looks like a genuine TiledArray/
+/// MADNESS-side issue on the pinned `84411a6` commit, not something fixable
+/// in this file -- `real_tiling_sidecar` should be considered UNSAFE unless
+/// a newer TiledArray commit is confirmed to fix it (same posture as the
+/// tile-size-1 default above: don't re-attempt coarsening without
+/// re-verifying against whatever commit is current at the time).
 template <typename ArrayToT>
 inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
                                 int outer_rank, int inner_rank,

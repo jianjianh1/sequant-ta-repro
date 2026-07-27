@@ -110,13 +110,23 @@ int main(int argc, char** argv) {
               << "    SPTC_MAD_WAIT_SLEEP_US=N  sleep duration in us for 'sleep' policy (default: 0)\n"
               << "    MAD_NUM_THREADS=N  MADNESS's OWN env var (not ours), total app threads incl.\n"
               << "      main -- default is hardware_concurrency() (16 on this box's 8-core/2-way-SMT\n"
-              << "      topology). Phase R (2026-07-22, performance-parity investigation) found\n"
-              << "      MAD_NUM_THREADS=10 (roughly physical-core-count + a small margin, NOT the\n"
-              << "      full 16 logical/SMT count) is ~13-23% FASTER than the 16-thread default on\n"
-              << "      this real ethane workload -- MADNESS's single shared spinlock-protected task\n"
+              << "      topology). Phase R (2026-07-22) found MAD_NUM_THREADS=10 ~13-23% FASTER than\n"
+              << "      the 16-thread default -- MADNESS's single shared spinlock-protected task\n"
               << "      queue means extra SMT-count threads add pure contention, not real parallel\n"
-              << "      capacity, once real work (post-CSE) is this fine-grained. Recommended:\n"
-              << "      combine with SPTC_MAD_WAIT_POLICY=yield for the best validated combination.\n";
+              << "      capacity, once real work (post-CSE) is this fine-grained.\n"
+              << "    CPU AFFINITY (2026-07-26, performance-parity investigation, supersedes the\n"
+              << "      MAD_NUM_THREADS=10 finding above): pin the whole process to this machine's\n"
+              << "      PHYSICAL cores (avoid SMT siblings) via `taskset -c <physical-core-list>`,\n"
+              << "      e.g. `taskset -c 0-7` on this 8-physical-core box, AND set\n"
+              << "      MAD_NUM_THREADS to the physical core count exactly (8 here, not 10) --\n"
+              << "      an 8-way sweep found pinned+8 beats every unpinned config and every other\n"
+              << "      pinned thread count (~20-24% faster than unpinned+10). Once pinning removes\n"
+              << "      OS scheduling/migration noise, extra threads past the physical core count\n"
+              << "      just re-add contention -- the opposite of the unpinned case, where extra\n"
+              << "      threads compensated for that noise. RECOMMENDED best-known combination:\n"
+              << "      `taskset -c 0-7` + `MAD_NUM_THREADS=8` + `SPTC_MAD_WAIT_POLICY=yield`\n"
+              << "      (adjust the core list/thread count to your own machine's physical core\n"
+              << "      count if different).\n";
     return 1;
   }
   const std::string data_dir = argv[1];
