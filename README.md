@@ -16,7 +16,11 @@ fork, plus the ethane leaf/reference data both sides were validated against
 — lives in the sibling repo
 [`jianjianh1/mpqc-benchmark`](https://github.com/jianjianh1/mpqc-benchmark).
 See [`docs/MPQC_COMPARISON.md`](docs/MPQC_COMPARISON.md) for the full parity
-analysis and why the tuning knobs below exist.
+analysis and why the tuning knobs below exist, and
+[`docs/MPQC_EVALUATION.md`](docs/MPQC_EVALUATION.md) for a stage-by-stage trace
+of *how* MPQC evaluates the residual, each stage's repro-match status, and the
+verified conclusion on the cold-gap lever (it is the ToT-`einsum` representation,
+not tiling or pmap — both empirically ruled out).
 
 ## Layout
 
@@ -38,6 +42,8 @@ analysis and why the tuning knobs below exist.
   reference checksum.
 - `src/ta_sequant_native_residual_main.cpp` — the driver.
 - `docs/MPQC_COMPARISON.md` — the performance-parity writeup.
+- `docs/MPQC_EVALUATION.md` — end-to-end trace of MPQC's CSV-CCSD residual
+  evaluation + "how to match it" assessment (the cold-gap lever analysis).
 - `tools/` — optional diagnostics/benchmarks (off by default; see
   `tools/README.md`).
 
