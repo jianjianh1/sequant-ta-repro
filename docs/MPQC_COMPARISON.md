@@ -337,9 +337,12 @@ same intermediate's ragged-ToT contraction efficiency. Note the repro *does* sca
 multi-node DF handling.
 
 **Correctness.** Anchored on the gauge-free R(T=0): feeding zero t-amplitudes, the
-repro reproduces MPQC's occurrence-1 residual. C₃H₈ matched **exactly** (T2 nnz
-261914, sum 14.9251990396 vs MPQC to ~13 digits). Sweep checksums are rank-invariant
-(the multi-rank correctness gate).
+repro reproduces MPQC's occurrence-1 residual (validated multi-rank at np=16, so it
+also checks the distributed path). **Bit-exact** for C₃H₈ (T2 nnz 261914, sum
+14.9251990396) and C₄H₁₀ (nnz 371400, sum 17.8115228729) — matching MPQC to ~13
+digits; C₅H₁₂ matches to ~7 significant figures (sum 22.327121 vs 22.327137, nnz
+482201 exact, sumsq/max to ~10 digits — float reassociation on the larger residual).
+All sweep checksums are rank-invariant across np (the multi-rank correctness gate).
 
 **Owning-ToT is required at multi-rank.** The default `TA::ArenaTensor` inner tile
 segfaults at np≥8 for the larger molecules (cross-rank lazy-deletion race in MADNESS);
