@@ -23,14 +23,16 @@ cc-pVDZ-F12 / aug-cc-pVDZ-RI, frozen-core; `ethane-perf.json`). All
 correctness-gated on the reference checksums (see Verification).
 
 **§11 extends this from a single ethane point to the alkane series
-C₂H₆–C₅H₁₂ (cc-pVTZ) with a 1-rank-per-node sweep over CloudLab node16–31.**
-At real basis-set scale the repro is at **warm parity** (≤1.3× at np=16,
-faster for small molecules) and, because its work distributes across ranks
-while MPQC's reference is single-rank, **beats MPQC's cold whole-residual at
-np=16** (down to 0.49× for C₅H₁₂). The one remaining structural gap — the
-giant DF-half-transform intermediate — is also a memory wall (it OOMs hexane
-even across 16 nodes) and is addressable via the generator's proto-extent
-factorization.
+C₂H₆–C₅H₁₂ (cc-pVTZ) with a 1-rank-per-node sweep over CloudLab node16–31,
+run on *both* sides.** The key correction it delivers: both the repro *and*
+MPQC scale well multi-node, so the fair comparison is at **equal ranks** —
+and there MPQC is faster for every real molecule (repro ~2–3× slower warm,
+~4.5–7× slower cold at np=16; the repro is ahead only on tiny ethane's warm
+residual, where MPQC's small-workload overhead dominates). The gap is pinned
+to one giant DF-half-transform intermediate that the repro materialises —
+which both scales worse across ranks and is a hard memory wall (it OOMs
+hexane even across 16 nodes) — and which the generator's proto-extent lever
+could avoid.
 
 ---
 
@@ -270,104 +272,92 @@ Env-gated knobs leave defaults untouched when unset:
 
 The ethane parity study (§1–10) is one point. This section extends it to the
 linear-alkane series **C₂H₆, C₃H₈, C₄H₁₀, C₅H₁₂** (cc-pVTZ / cc-pVTZ-RI, the
-`jianjianh1/mpqc-alkanes-v3` dataset) and a **rank sweep np ∈ {1,2,4,8,16},
-one MPI rank per node across CloudLab node16–31**. C₆H₁₄ is discussed under
-*Limits* below. Both sides use the identical TiledArray fork commit `cd53bd3`
-and the same SeQuant derivation; MPQC references are fresh single-rank
-instrumented runs (`WholeResidualWallTime`), the repro is the generated
-`TA::einsum` sequence at the locked coarse-tiling config
-(`SPTC_COARSE_OCC=9 SPTC_OCC_TILE=2 SPTC_COARSE_PAD=0 SPTC_TILES_PER_DIM=8`,
-`MAD_NUM_THREADS=8`, `--bind-to none`).
+`jianjianh1/mpqc-alkanes-v3` dataset) with a **rank sweep np ∈ {1,4,8,16}, one MPI
+rank per node across CloudLab node16–31**, run **on both sides**. C₆H₁₄ is under
+*Limits*. Both sides use the identical TiledArray fork `cd53bd3` and the same SeQuant
+derivation; MPQC is the instrumented sif on PaRSEC, the repro is the generated
+`TA::einsum` sequence (owning-ToT, coarse tiling `SPTC_COARSE_OCC=9 SPTC_OCC_TILE=2
+SPTC_TILES_PER_DIM=8`, `MAD_NUM_THREADS=8`, `--bind-to none`).
 
-**Tensor layout: owning-ToT is required at multi-rank.** The default
-`TA::ArenaTensor` inner tile (arena-pinned, SIMD-slab-packed) segfaults at
-np ≥ 8 for the larger molecules — a cross-rank lazy-deletion race in
-MADNESS. Compiling with `-DSPTC_OWNING_TOT` (plain owning `TA::Tensor<double>`
-inner cells) removes the race, is numerically identical (verified: C₂H₆
-warm checksum matches arena bit-for-bit), and here is also **~40 % faster**
-(the arena packing overhead exceeds its benefit for this ragged-PNO
-workload). All numbers below are owning-ToT.
+**Both sides multi-rank scale — compare at the SAME rank count.** A single-rank
+MPQC number is *not* MPQC's best at these sizes: run multi-node, MPQC scales strongly
+for the real molecules (C₄H₁₀ cold T2 76.9 s single-rank → **10.2 s at np=16, 7.6×**;
+C₅H₁₂ 233 → **20.4 s, 11×**). Only ethane is too small to benefit (its warm
+multi-node is marginally *slower* than single-rank). So the honest comparison is
+same-np, both sides:
 
-**Why single-rank MPQC is the reference.** MPQC does run multi-node (PaRSEC
-across node16–31, sif on shared `/proj`), but at these molecule sizes its
-cross-node communication dominates: ethane np=2 is **2.9–5.2× *slower*** than
-single-rank (T2 cold 22.6 s vs 7.73 s, warm 19.9 s vs 3.83 s). MPQC's
-single-rank time is therefore its best case, and the fair target the repro's
-rank sweep is measured against.
+**WARM T2 (s) — repro / MPQC / ratio, same np:**
 
-### Warm (steady-state) T2 — the fair comparison
-
-MPQC caches its t-independent intermediates (`cache_imeds`); the fair
-comparison is the repro's t-dependent-only warm residual (`ta_warm_t2`,
-precompute done once) vs MPQC's warmed iteration (`occ2`). T2 wall-time (s):
-
-| molecule | np1 | np2 | np4 | np8 | np16 | MPQC warm | ratio(np1) |
-|---|---|---|---|---|---|---|---|
-| C2H6 | 2.96 | 4.54 | 4.30 | 3.63 | 3.17 | 3.827 | 0.77x |
-| C3H8 | 22.71 | 30.52 | 27.61 | 21.66 | 18.44 | 17.965 | 1.26x |
-| C4H10 | 37.59 | 41.32 | 35.58 | 25.21 | 20.61 | 22.268 | 1.69x |
-| C5H12 | 116.20 | 114.87 | 91.01 | 62.33 | 48.75 | 39.62 | 2.93x |
-
-The repro warm residual **reaches parity-or-better with MPQC at np=16**:
-C₂H₆ 0.83×, C₃H₈ 1.03×, C₄H₁₀ 0.93×, C₅H₁₂ 1.23× (repro/MPQC at np=16). The
-warm work is small, so rank-scaling is modest and np=2 is often *slower* than
-np=1 (MPI/communication overhead exceeds the parallelism benefit); the gain
-appears at np=8–16 for the larger molecules.
-
-### Cold (whole-residual) T2 — multi-rank recovers the one-time gap
-
-The cold residual recomputes the t-independent DF/CSV block every call. At
-np=1 this is ~10× MPQC's cold first-iteration (the single giant μ̃Κ
-DF-half-transform intermediate, §3/§6). But that work **distributes across
-ranks**, and MPQC's reference is single-rank, so the repro's cold residual
-catches and passes MPQC's cold time as ranks grow — increasingly so with
-molecule size. T2 wall-time (s):
-
-| molecule | np1 | np2 | np4 | np8 | np16 | speedup |
+| mol | metric | np1 | np2 | np4 | np8 | np16 |
 |---|---|---|---|---|---|---|
-| C2H6 | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 | 1.9x |
-| C3H8 | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 | 2.2x |
-| C4H10 | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 | 3.2x |
-| C5H12 | - | 339.0 | 215.1 | 149.3 | 114.8 | - |
+| C2H6 | repro | 3.0 | 4.5 | 4.3 | 3.6 | 3.2 |
+| C2H6 | MPQC | 3.8 | - | 3.7 | 4.3 | 4.4 |
+| C2H6 | ratio | 0.8x | - | 1.2x | 0.8x | 0.7x |
+| C3H8 | repro | 22.7 | 30.5 | 27.6 | 21.7 | 18.4 |
+| C3H8 | MPQC | 18.0 | - | 9.7 | 9.3 | 8.5 |
+| C3H8 | ratio | 1.3x | - | 2.8x | 2.3x | 2.2x |
+| C4H10 | repro | 37.6 | 41.3 | 35.6 | 25.2 | 20.6 |
+| C4H10 | MPQC | 22.3 | - | 16.7 | 13.3 | 10.7 |
+| C4H10 | ratio | 1.7x | - | 2.1x | 1.9x | 1.9x |
+| C5H12 | repro | 116.2 | 114.9 | 91.0 | 62.3 | 48.7 |
+| C5H12 | MPQC | 39.6 | - | 28.4 | 22.2 | 18.3 |
+| C5H12 | ratio | 2.9x | - | 3.2x | 2.8x | 2.7x |
 
-Cold repro/MPQC-cold at np=16: C₂H₆ 0.85×, C₃H₈ 0.96×, C₄H₁₀ 0.63×, C₅H₁₂
-0.49× — i.e. at 16 ranks the repro's *cold* whole-residual is up to ~2×
-faster than MPQC's single-rank cold, and the advantage grows with molecule
-size (self-speedup np1→16: ~1.9× / 2.2× / 3.2× for C₂H₆/C₃H₈/C₄H₁₀).
+**COLD T2 (s) — repro / MPQC / ratio, same np:**
 
-### Correctness
+| mol | metric | np1 | np2 | np4 | np8 | np16 |
+|---|---|---|---|---|---|---|
+| C2H6 | repro | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 |
+| C2H6 | MPQC | 7.7 | - | 3.7 | 3.9 | 4.3 |
+| C2H6 | ratio | 1.6x | - | 2.6x | 2.1x | 1.5x |
+| C3H8 | repro | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 |
+| C3H8 | MPQC | 31.3 | - | 8.1 | 7.4 | 6.8 |
+| C3H8 | ratio | 2.1x | - | 6.0x | 4.8x | 4.4x |
+| C4H10 | repro | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 |
+| C4H10 | MPQC | 76.9 | - | 13.9 | 11.6 | 10.2 |
+| C4H10 | ratio | 2.0x | - | 7.1x | 5.9x | 4.8x |
+| C5H12 | repro | - | 339.0 | 215.1 | 149.3 | 114.8 |
+| C5H12 | MPQC | 233.1 | - | 36.2 | 25.9 | 20.4 |
+| C5H12 | ratio | - | - | 5.9x | 5.8x | 5.6x |
 
-Timing is gauge-independent. Correctness is anchored on the gauge-free
-R(T=0): feeding zero t-amplitudes, the repro reproduces MPQC's occurrence-1
-residual. For C₃H₈ this matched **exactly** (T2 nnz 261914, sum
-14.9251990396 vs MPQC 14.9251990396 to ~13 digits), validating the residual
-math and the leaf conversion. Within each sweep, checksums are rank-invariant
-across all np (the multi-rank correctness gate).
+**Result.** At equal ranks **MPQC is faster for every real molecule**: the repro is
+**~2–3× slower warm and ~4.5–7× slower cold** (C₃H₈–C₅H₁₂). The repro is
+competitive/faster *only* for tiny ethane's warm residual (0.7–0.8×), where MPQC's
+multi-node overhead dominates its small workload. (An earlier version of this section
+reported the repro "beating MPQC cold at np=16" — that compared the repro's 16-rank
+time against MPQC's *single-rank* time, which is not a fair comparison once MPQC uses
+the ranks too. Corrected here.)
 
-### Limits
+**Why — the giant DF-half-transform intermediate.** The cold gap (~5×) is the single
+μ̃Κ intermediate (§3/§6). MPQC's runtime evaluator distributes it across ranks
+efficiently; the repro's generated sequence materialises it explicitly, which both
+scales worse and is a hard **memory wall** (see *Limits*). The warm gap (~2×) is the
+same intermediate's ragged-ToT contraction efficiency. Note the repro *does* scale
+(C₅H₁₂ cold 339→15 s over the sweep) — it is just outpaced by MPQC's better
+multi-node DF handling.
 
-- **Hexane (C₆H₁₄) is beyond the repro's capacity at this factorization.**
-  Its t-independent giant intermediate (occ 19, PNO 351, RI 906) exhausts
-  memory even distributed across all 16 nodes (`std::bad_alloc` at np=16).
-  Notably MPQC's *single-rank* hexane run also OOM-kills (63 GB) — hexane
-  needs MPQC multi-rank, and the repro needs a factorization that never
-  materialises the giant intermediate. This makes the giant intermediate not
-  just the cold-*time* bottleneck (§3) but a memory *wall*.
-- **The `proto=100` generator lever** (raising `optimize()`'s PNO/proto
-  extent so the cost model avoids the giant intermediate) gives a **3× cold
-  speedup at np=1** and would sidestep the hexane memory wall — but it
-  currently changes the t-dependent residual ~7 % for an as-yet-unresolved
-  order-dependent reason (not screening, CSE, padding, or output convention;
-  see the `gap-fix-proto-extent` investigation). It is a concrete,
-  high-value open item: validating/fixing it would both close the cold gap
-  and unlock hexane.
+**Correctness.** Anchored on the gauge-free R(T=0): feeding zero t-amplitudes, the
+repro reproduces MPQC's occurrence-1 residual. C₃H₈ matched **exactly** (T2 nnz
+261914, sum 14.9251990396 vs MPQC to ~13 digits). Sweep checksums are rank-invariant
+(the multi-rank correctness gate).
 
-### Takeaway
+**Owning-ToT is required at multi-rank.** The default `TA::ArenaTensor` inner tile
+segfaults at np≥8 for the larger molecules (cross-rank lazy-deletion race in MADNESS);
+`-DSPTC_OWNING_TOT` (owning `Tensor<double>` inner cells) removes it, is numerically
+identical, and is ~40 % faster here.
 
-At real (cc-pVTZ) scale the repro is **at parity with MPQC on the fair warm
-residual (≤1.3× at np=16, faster for small molecules)** and, because its work
-distributes across ranks while MPQC's reference is single-rank, **beats MPQC
-on the cold whole-residual at np=16 (down to 0.49× for C₅H₁₂)**. The single
-remaining structural gap is the giant DF-half-transform intermediate, which
-is both a serial-time and a memory bottleneck and is addressable via the
-generator's proto-extent factorization.
+**Limits & the path to close the gap.** Hexane (C₆H₁₄, occ 19 / PNO 351 / RI 906)
+exhausts memory even across all 16 nodes for the repro (`std::bad_alloc`) — the giant
+intermediate is a memory wall (MPQC single-rank hexane also OOMs at 63 GB; MPQC
+multi-node clears it). The **`proto=100` generator lever** (raising `optimize()`'s
+PNO/proto extent so the cost model never forms the giant intermediate) gives a 3×
+cold speedup at np=1 and would clear the hexane wall — but currently perturbs the
+t-dependent residual ~7 % for an unresolved order-dependent reason (see
+`gap-fix-proto-extent`). Validating/fixing it is the concrete route to closing both
+the cold gap and the memory wall.
+
+**Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC and is
+numerically correct, but at real (cc-pVTZ) scale and equal ranks MPQC's runtime
+evaluator + tiling handle the DF half-transform intermediate substantially more
+efficiently (~2× warm, ~5× cold). The gap is now pinned to that one intermediate and
+one actionable generator lever (proto-extent factorization).
