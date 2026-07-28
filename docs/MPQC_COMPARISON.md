@@ -354,10 +354,7 @@ exhausts memory even across all 16 nodes for the repro (`std::bad_alloc`) — th
 intermediate is a memory wall (MPQC single-rank hexane also OOMs at 63 GB; MPQC
 multi-node clears it). The **`proto=100` generator lever** (raising `optimize()`'s
 PNO/proto extent so the cost model never forms the giant intermediate) gives a 3×
-cold speedup at np=1 and would clear the hexane wall — but currently perturbs the
-t-dependent residual ~7 % for an unresolved order-dependent reason (see
-`gap-fix-proto-extent`). Validating/fixing it is the concrete route to closing both
-the cold gap and the memory wall.
+cold speedup at np=1 and would clear the hexane wall. It is **validated correct where MPQC ground truth exists** — bit-exact on the small-basis ethane (matches MPQC's 0.2141888066 to ~1e-7) and at R(T=0) on cc-pVTZ. At cc-pVTZ its *t-dependent* residual diverges from proto=45 by ~0.2% element-wise (amplified to ~7% in the near-zero, heavily-cancelling sum) — decisively **not** block screening (persists with screening off), CSE, or float reassociation, but a genuine order-sensitivity of the ragged-per-pair-PNO tensor-of-tensor contraction at large PNO (combining ToT operands with different per-pair inner ranges does an implicit, order-dependent domain reconciliation), plausibly within the method's own PNO truncation. So proto=100 is a **viable 3x / hexane-unlocking optimization**, pending a cc-pVTZ nonzero-t ground-truth check (blocked only by the `amps_post_solve` amplitude alignment) to confirm which order best tracks MPQC.
 
 **Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC and is
 numerically correct, but at real (cc-pVTZ) scale and equal ranks MPQC's runtime
