@@ -1,0 +1,18 @@
+molecule,np,side,mode,T1_s,T2_s,note
+C2H6,1,mpqc,cold,1.771,7.732,occ1 WholeResidualWallTime PaRSEC
+C2H6,1,mpqc,warm,0.715,3.827,occ2 imeds-cached
+C2H6,1,repro,cold,1.2,80.0,proto45 shipped TPD=8; T2 hotspot=DF half-transform
+C2H6,1,repro,warm,,5.0,ta_warm_t2 t-dependent only
+C2H6,1,repro,cold-proto100,,27.0,generator proto=100 avoids giant intermediate (3x) but t-dep value differs 7% - correctness TBD
+C3H8,1,mpqc,cold,6.056,31.272,occ1 WholeResidualWallTime
+C3H8,1,mpqc,warm,2.535,17.965,occ2 imeds-cached; ref occ2 T2 nnz=261914 sum=-0.15287 T1 nnz=964 sum=-0.05591
+C4H10,1,mpqc,cold,10.009,76.853,occ1 WholeResidualWallTime
+C4H10,1,mpqc,warm,6.544,22.268,occ2; ref occ2 T2 nnz=371400 sum=-0.06203 T1 nnz=1301 sum=-0.06903
+C2H6,1,repro,cold,,81.8,np-sweep node16-31 1rank/node
+C2H6,2,repro,cold,,57.3,np-sweep node16-31 1rank/node
+C2H6,4,repro,cold,,33.0,np-sweep node16-31 1rank/node
+C2H6,8,repro,cold,,20.9,np-sweep node16-31 1rank/node
+C2H6,16,repro,cold,,15.2,np-sweep node16-31 1rank/node
+C5H12,1,mpqc,cold,20.05,233.05,occ1 WholeResidualWallTime
+C5H12,1,mpqc,warm,11.80,39.62,occ2; ref occ2 T2 nnz=482201 sum=-0.04786
+C6H14,1,mpqc,cold,36.51,OOM,single-rank OOM-killed 63GB during T2; hexane MPQC needs multi-rank (memory)

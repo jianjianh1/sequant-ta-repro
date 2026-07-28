@@ -1,0 +1,5 @@
+molecule,t2_nnz_repro,t2_nnz_mpqc,t2_sum_repro,t2_sum_mpqc,verdict
+C3H8,261914,261914,14.9251990396013,14.925199039601797,EXACT_MATCH
+C2H6,150301,150301,11.176(alkanes-v3 gauge),10.644(fresh-run),sumsq+max match; sum differs by leaf-source gauge
+C4H10,371400,371400,17.811522872857,17.811522872856873,EXACT_MATCH (np=16 multi-rank)
+C5H12,482201,482201,22.327121,22.327137,MATCH ~7sig (nnz exact; reassociation on larger sum; np=16)
