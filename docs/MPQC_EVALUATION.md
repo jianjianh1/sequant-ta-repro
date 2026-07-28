@@ -337,12 +337,29 @@ does what §8 predicted:
   evenly 24–25 tiles/rank** — under the cyclic pmap; every other sparse DF/CSV array balances the
   same way.
 
-What this does **not** yet establish is the wall-time payoff: the local single-node
-16-rank-oversubscribed measurement isn't representative, and TA's contraction engine may re-map
-operands internally, so a balanced *input* distribution does not automatically mean a balanced
-*SUMMA*. The next step is a real multi-node np=16 timing run (owning-ToT build deployed to the
-campaign `/proj` harness, `SPTC_CYCLIC_PMAP=1`) to measure whether engaging the idle ranks moves
-cold np=16 toward MPQC's ~10 s. Implemented and correctness-clean; timing pending.
+**Timing payoff — measured, and it does *not* help (the informative negative result).** A real
+multi-node run (owning-ToT binary on nodes 16–31, C₄H₁₀ cold np=16, committed §11 config, cyclic
+off vs on; `docs/scaling-campaign-data/cyclic_pmap_timing.{sh,csv}`) shows **no speedup**:
+
+| pmap | T2 cold np=16 (s), 3 trials | median | T2 `sum` |
+|---|---|---|---|
+| default (blocked) | 50.8 / 48.9 / 47.1 | **48.9** | −7.10587645551 |
+| cyclic (`SPTC_CYCLIC_PMAP`) | 49.9 / 84.4 / 49.8 | **49.9** | −7.10587645551 |
+
+Same to slightly worse (one 84 s outlier), still ~5× MPQC's ~10 s; the checksum is invariant at
+np=16 too (agree to ~11 sig figs), re-confirming correctness. **So eliminating the idle *input*
+ranks does not translate into a faster contraction** — exactly the "balanced input distribution
+≠ balanced SUMMA" caveat, now empirically confirmed. TA's `einsum` re-maps operands into its own
+SUMMA layout, so the input array pmap is not what governs the giant intermediate's execution.
+The cold-gap bottleneck is *inside* the ToT `einsum` — consistent with the earlier per-op profile
+(`MPQC_COMPARISON.md`/campaign notes: one contraction is ~87 % of cold T2 and runs ~100× off
+peak = per-outer-cell ToT tile-task overhead, not flops, not distribution). **Lever (a) as
+"fix the input pmap" is therefore refuted as a timing fix.** `SPTC_CYCLIC_PMAP` is kept as a
+correct, gated diagnostic (it does balance the inputs), but the real cold lever is narrower still:
+the ToT `einsum`'s per-cell cost for the giant DF half-transform — addressable only by a
+*representation* change (a SeQuant factorization that makes (μ̃,Κ) the ToT **inner** index, so the
+intermediate is a few large cells instead of ~4 M tiny per-pair cells) or a TA backend improvement
+to flat×ToT contraction, not by any pmap/tiling knob.
 
 ---
 
@@ -357,11 +374,14 @@ evaluation approach"):
   take TA's default from a self-chosen tiling (`ta_builder.h:363`). The verification sweep above
   shows the occ tile *size* is **not** the lever (finer = no change, coarser = worse, none near
   MPQC's ~10 s); what remains is the **pmap** — whether the two SUMMA operands are co-resident
-  and how the intermediate's tiles spread across ranks. **Implemented** as `SPTC_CYCLIC_PMAP`
-  (`maybe_cyclic_pmap`, `ta_builder.h`): a cyclic `RoundRobinPmap` for the DF/CSV arrays,
-  checksum-invariant and shown to eliminate the idle ranks (§ verification above). *Timing payoff
-  at real multi-node np=16 is the open follow-up — a balanced input distribution need not yield a
-  balanced SUMMA.*
+  and how the intermediate's tiles spread across ranks. Tried and **refuted** as a timing fix:
+  `SPTC_CYCLIC_PMAP` (`maybe_cyclic_pmap`, `ta_builder.h`) balances the input arrays
+  (checksum-invariant, 0 idle ranks) but does **not** speed up cold np=16 (48.9 s → 49.9 s; §
+  verification above) — TA re-maps operands into its own SUMMA layout, so the input pmap doesn't
+  govern the contraction. The genuine cold lever is narrower: the ToT `einsum`'s per-outer-cell
+  cost for the giant DF half-transform (~87 % of cold T2, ~100× off peak), fixable only by a
+  **representation change** — a SeQuant factorization making (μ̃,Κ) the ToT *inner* index (few
+  large cells, not ~4 M tiny per-pair cells) — or a TA backend improvement, not a pmap/tiling knob.
 - **(b) Hexane memory wall → port aux-Κ batching.** Stream Κ in tile-aligned slices over the
   *persistent* DF terms, sum partials, scale the sparse threshold by 1/`n_batches`
   (`eval.hpp:1129`, `cck.ipp:1601-1645`). Bigger, needs the sliced-trange SUMMA path (already

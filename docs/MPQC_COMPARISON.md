@@ -395,11 +395,13 @@ TiledArray, and is numerically correct; both sides even materialize the same gia
 half-transform intermediate (MPQC's aux-batching was off in these runs). At real (cc-pVTZ) scale
 and equal ranks MPQC is still ~2× warm / ~5× cold faster, and the gap is now pinned to three
 concrete, named levers (full trace in `MPQC_EVALUATION.md`):
-1. **Cold np=16 → pmap co-location** of the DF-carrying ToT arrays. MPQC's operands inherit the
-   CSV solver's `trange`/`shape`/`pmap` (`cck.ipp:1563-1565`); the repro's take TA's default from
-   a self-chosen tiling (`ta_builder.h:363`). The same SUMMA, load-balanced differently. A tiling
-   sweep (`MPQC_EVALUATION.md` verification) rules out occ tile *size* as the lever (finer = no
-   change, coarser = worse) — it is the **pmap**, addressable in `build_tot_array`.
+1. **Cold np=16 → ToT-einsum representation** (not tiling, not pmap — both empirically ruled out).
+   The `MPQC_EVALUATION.md` verification sweeps show occ tile *size* does not move it (finer = no
+   change, coarser = worse) and a cyclic input pmap that eliminates the idle ranks does not either
+   (48.9 s → 49.9 s, checksum-invariant) — TA re-maps operands into its own SUMMA layout. The
+   bottleneck is *inside* the ToT `einsum`: one contraction is ~87 % of cold T2 and runs ~100× off
+   peak (per-outer-cell tile-task overhead). The real lever is a SeQuant factorization making
+   (μ̃,Κ) the ToT *inner* index (few large cells vs ~4 M tiny per-pair cells) or a TA backend fix.
 2. **Hexane memory wall → aux-Κ batching** (`eval.hpp:1129`, `cck.ipp:1601-1645`): stream Κ in
    tile-aligned slices over the persistent DF terms so the intermediate is never fully formed.
    *A generator/backend project; the memory fix, independent of (1).*
