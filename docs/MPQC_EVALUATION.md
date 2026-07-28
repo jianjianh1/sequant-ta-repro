@@ -281,15 +281,31 @@ Finer occ tiling (2) leaves cold np=16 unchanged (~48–49 s); coarser (4, 8) ma
 the pure size-1-pair-key default is pathologically slow. **None approaches MPQC's ~10 s.** So
 the occupied-space tile *size* is not the cold-gap lever.
 
+**Direct confirmation — the default pmap leaves ranks idle.** A second diagnostic
+(`SPTC_DUMP_PMAP`, `src/ta_builder.h` `dump_pmap_distribution`) dumps each array's nonzero-tile
+count per rank at np=16 (`docs/scaling-campaign-data/pmap_distribution_C4H10_np16.txt`; per-rank
+pmap distribution is node-count-independent, so it runs `mpirun -np 16` on one node). The result
+is unambiguous: TA's **default blocked pmap starves ranks 0, 1, 2 — they own zero tiles of every
+*sparse* DF/CSV array** (`g`, `g1`, `c1`, `c2`, `c2_tot`, `t_i_i_a_a`, …), while only the fully
+*dense* arrays (`g0`, `f_m_m`, `s_m_m`) are balanced. The mechanism: a contiguous-block pmap maps
+the low tile-ordinals to the low ranks, and the frozen-core-zeroed *leading* tiles are exactly
+those low ordinals — so ranks 0–2 get all-empty ranges. The giant DF half-transform intermediate
+is built from these sparse operands, so its SUMMA runs with **~3/16 (~19%) of ranks idle**,
+independent of occ tile size (which is why the sweep above saw no tile-size effect).
+
 This **sharpens §8's claim**: it is not "match MPQC's occ tiling" in general — MPQC's advantage
 is the **pmap co-location** of the DF-carrying operands (they inherit the CSV solver's `pmap`,
 `cck.ipp:1565`), i.e. *where the giant intermediate's tiles land across ranks and whether the
 two SUMMA operands are co-resident*, not how finely the occupied axis is cut. Changing the tile
 size (which is all `build_tot_array` currently exposes) reshuffles TA's default blocked pmap but
 does not co-locate the operands the way MPQC's inherited pmap does. The actionable lever is
-therefore narrower and more specific than first stated: **give the DF-carrying ToT arrays an
-explicit, shared `pmap` in `build_tot_array` (currently `ArrayToT array(world, outer_trange,
-sp_shape)` with TA's default, `ta_builder.h:363`)** — not merely retune the occ tile count.
+therefore narrower and more specific than first stated, and the idle-rank diagnostic pins the
+exact fix: **replace TA's default blocked pmap for the DF-carrying arrays with one that
+distributes the *nonzero* tiles evenly across all ranks** (e.g. a cyclic/round-robin pmap over
+occupied tiles, or dropping the frozen-core-zeroed leading tiles from the `TiledRange` so the
+blocked pmap no longer front-loads empty ranges) — passed explicitly to `ArrayToT array(world,
+outer_trange, sp_shape, pmap)` in place of the current defaulted `ta_builder.h:363`. This would
+engage the ~3 idle ranks; it is *not* an occ-tile-count retune.
 
 *Caveat surfaced by the sweep — coarse multi-pair occ tiling is numerically unsafe here.* With
 `COARSE_PAD=0` (ragged) and a genuinely multi-pair occ tile (`OCC_TILE ≥ 4`), the T2 checksum

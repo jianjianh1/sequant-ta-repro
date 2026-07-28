@@ -88,6 +88,46 @@ inline std::vector<std::size_t> adaptive_tile_sizes(
   return sizes;
 }
 
+/// Diagnostic (env-gated SPTC_DUMP_PMAP, 2026-07-28): dump how this array's
+/// nonzero tiles are distributed across MPI ranks. Tests the cold-gap
+/// hypothesis in docs/MPQC_EVALUATION.md §8: MPQC's DF-carrying ToT arrays
+/// inherit the CSV solver's pmap, while the repro takes TA's DEFAULT blocked
+/// pmap here -- if the giant dense DF operand lands on only a few ranks, the
+/// SUMMA of the giant intermediate is load-imbalanced regardless of tile size
+/// (which the occ-tiling sweep already ruled out as the lever). Per-rank tile
+/// counts are pmap-only, so they are identical whether the N ranks sit on N
+/// nodes or one -- run `mpirun -np 16` on a single node to measure. No effect
+/// unless SPTC_DUMP_PMAP is set; no math change.
+template <typename Array>
+inline void dump_pmap_distribution(TA::World& world, const Array& array,
+                                   const std::string& label) {
+  if (!std::getenv("SPTC_DUMP_PMAP") || label.empty()) return;
+  const std::size_t nranks = world.size();
+  std::vector<long> per_rank(nranks, 0);
+  long local = 0;
+  for (auto it = array.begin(); it != array.end(); ++it) ++local;
+  per_rank[world.rank()] = local;
+  world.gop.sum(per_rank.data(), per_rank.size());
+  if (world.rank() == 0) {
+    const std::size_t total = array.trange().tiles_range().volume();
+    long occupied = 0, mx = 0, mn = -1, empty_ranks = 0;
+    for (long c : per_rank) {
+      occupied += c;
+      mx = std::max(mx, c);
+      if (mn < 0 || c < mn) mn = c;
+      if (c == 0) ++empty_ranks;
+    }
+    std::cerr << "  PMAP " << label << ": " << occupied << " nonzero tiles / "
+              << total << " total, over " << nranks << " ranks; per-rank min/max="
+              << mn << "/" << mx << ", " << empty_ranks << " idle ranks [";
+    for (std::size_t r = 0; r < nranks; ++r) {
+      if (r) std::cerr << ",";
+      std::cerr << per_rank[r];
+    }
+    std::cerr << "]\n";
+  }
+}
+
 /// Build a TiledRange1 with uniform tile sizes for a dimension of given extent.
 inline TA::TiledRange1 make_tr1(std::size_t extent, std::size_t tile_size) {
   std::vector<std::size_t> boundaries;
@@ -185,6 +225,7 @@ inline TA::TSpArrayD build_sparse_array(TA::World& world,
               << ", sparsity=" << (sp_shape.sparsity() * 100.0) << "%"
               << ", tiles=" << tiles_range.volume() << "\n";
   }
+  dump_pmap_distribution(world, array, label);
 
   return array;
 }
@@ -444,6 +485,7 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
               << coo.values.size() << ", sparsity=" << (sp_shape.sparsity() * 100.0)
               << "%\n";
   }
+  dump_pmap_distribution(world, array, label);
 
   return array;
 }
