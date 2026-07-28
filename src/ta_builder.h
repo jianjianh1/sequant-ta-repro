@@ -2,6 +2,7 @@
 #define SPTC_TA_BUILDER_H
 
 #include <tiledarray.h>
+#include <TiledArray/pmap/round_robin_pmap.h>
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -128,6 +130,26 @@ inline void dump_pmap_distribution(TA::World& world, const Array& array,
   }
 }
 
+/// Gap-closing lever (a) (env-gated SPTC_CYCLIC_PMAP, 2026-07-28): return an
+/// explicit CYCLIC (round-robin) process map instead of TA's default BLOCKED
+/// pmap for the DF/CSV arrays. The SPTC_DUMP_PMAP diagnostic showed the default
+/// blocked pmap (contiguous tile-ordinal ranges) starves the low ranks: the
+/// frozen-core-zeroed LEADING tiles are the low ordinals, so ranks 0..k get
+/// all-empty ranges and sit idle in the giant DF half-transform's SUMMA
+/// (docs/MPQC_EVALUATION.md §8 verification). RoundRobinPmap maps tile ordinal
+/// -> ordinal % nproc, so clustered high-ordinal nonzero tiles spread evenly
+/// across every rank. Returns an EMPTY shared_ptr when the knob is unset, which
+/// the DistArray ctor treats as "use the default pmap" -- so the default build
+/// is byte-for-byte unchanged. A pmap only changes which rank OWNS a tile, never
+/// a tile's value, so the residual checksum is invariant under this knob (the
+/// correctness check for the experiment).
+inline std::shared_ptr<const TA::Pmap> maybe_cyclic_pmap(TA::World& world,
+                                                         std::size_t ntiles) {
+  if (std::getenv("SPTC_CYCLIC_PMAP"))
+    return std::make_shared<TA::detail::RoundRobinPmap>(world, ntiles);
+  return {};
+}
+
 /// Build a TiledRange1 with uniform tile sizes for a dimension of given extent.
 inline TA::TiledRange1 make_tr1(std::size_t extent, std::size_t tile_size) {
   std::vector<std::size_t> boundaries;
@@ -175,9 +197,13 @@ inline TA::TSpArrayD build_sparse_array(TA::World& world,
   }
   tile_norms.inplace_unary([](float& x) { x = std::sqrt(x); });
 
-  // Pass 2: create sparse shape and array (determines tile-to-rank mapping)
+  // Pass 2: create sparse shape and array (determines tile-to-rank mapping).
+  // maybe_cyclic_pmap is empty unless SPTC_CYCLIC_PMAP is set (default pmap);
+  // Pass 3's is_local() checks below automatically respect whichever pmap the
+  // array carries, so the fill stays correct for any pmap.
   TA::SparseShape<float> sp_shape(world, tile_norms, trange);
-  TA::TSpArrayD array(world, trange, sp_shape);
+  TA::TSpArrayD array(world, trange, sp_shape,
+                      maybe_cyclic_pmap(world, tiles_range.volume()));
 
   // Pass 3: re-scan entries, only collect entries for local non-zero tiles
   using ElemEntry = std::pair<std::vector<long>, double>;
@@ -401,7 +427,8 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
   tile_norms.inplace_unary([](float& x) { x = std::sqrt(x); });
 
   TA::SparseShape<float> sp_shape(world, tile_norms, outer_trange);
-  ArrayToT array(world, outer_trange, sp_shape);
+  ArrayToT array(world, outer_trange, sp_shape,
+                 maybe_cyclic_pmap(world, tiles_range.volume()));
 
   // Pass 2: build + set local non-zero outer tiles via TiledArray's own
   // type-agnostic two-pass constructor (DistArray::init_tiles_nested) —

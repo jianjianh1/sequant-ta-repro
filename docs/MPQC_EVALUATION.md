@@ -321,6 +321,29 @@ tiles actually straddle multiple pairs, exactly the constraint `build_tot_array`
 data committed under `docs/scaling-campaign-data/`: `scripts/occ_tiling_experiment.sh` and
 `occ_tiling_experiment.csv`.)
 
+**Lever (a) implemented and validated at the input-distribution level (`SPTC_CYCLIC_PMAP`).**
+The fix from the idle-rank diagnostic — replace the default blocked pmap with a cyclic
+(`TA::detail::RoundRobinPmap`, tile ord → ord % nproc) one for the DF/CSV arrays — is now an
+env-gated option in `build_tot_array`/`build_sparse_array` (`maybe_cyclic_pmap`, `ta_builder.h`;
+empty/default unless the knob is set, so the default build is unchanged). Two checks confirm it
+does what §8 predicted:
+- **Correctness (checksum invariance).** A pmap only changes which rank *owns* a tile, never a
+  tile's value, so a correct pmap swap must leave the residual identical. Verified: C₂H₆ np=2 T2
+  `sum` default `-0.000677185440882994` vs cyclic `-0.000677185440888003` — equal to ~13 sig figs
+  (the ~5e-15 tail is just cross-rank reduction reordering), with `nnz`/`sumsq`/`max_abs`
+  bit-identical.
+- **Behavior (idle ranks eliminated).** C₄H₁₀ np=16: the sparse array `g1` goes from
+  `[0,0,0,4,41,25,…]` (3 idle ranks) under the default pmap to `[25,25,25,…,24]` — **0 idle,
+  evenly 24–25 tiles/rank** — under the cyclic pmap; every other sparse DF/CSV array balances the
+  same way.
+
+What this does **not** yet establish is the wall-time payoff: the local single-node
+16-rank-oversubscribed measurement isn't representative, and TA's contraction engine may re-map
+operands internally, so a balanced *input* distribution does not automatically mean a balanced
+*SUMMA*. The next step is a real multi-node np=16 timing run (owning-ToT build deployed to the
+campaign `/proj` harness, `SPTC_CYCLIC_PMAP=1`) to measure whether engaging the idle ranks moves
+cold np=16 toward MPQC's ~10 s. Implemented and correctness-clean; timing pending.
+
 ---
 
 ## Levers to actually close the gap
@@ -334,9 +357,11 @@ evaluation approach"):
   take TA's default from a self-chosen tiling (`ta_builder.h:363`). The verification sweep above
   shows the occ tile *size* is **not** the lever (finer = no change, coarser = worse, none near
   MPQC's ~10 s); what remains is the **pmap** — whether the two SUMMA operands are co-resident
-  and how the intermediate's tiles spread across ranks. Actionable in `build_tot_array`: give the
-  DF-carrying arrays an explicit, shared `pmap` (today they take TA's default) rather than
-  retuning tile counts. *(In-repo, but a more surgical change than a knob.)*
+  and how the intermediate's tiles spread across ranks. **Implemented** as `SPTC_CYCLIC_PMAP`
+  (`maybe_cyclic_pmap`, `ta_builder.h`): a cyclic `RoundRobinPmap` for the DF/CSV arrays,
+  checksum-invariant and shown to eliminate the idle ranks (§ verification above). *Timing payoff
+  at real multi-node np=16 is the open follow-up — a balanced input distribution need not yield a
+  balanced SUMMA.*
 - **(b) Hexane memory wall → port aux-Κ batching.** Stream Κ in tile-aligned slices over the
   *persistent* DF terms, sum partials, scale the sparse threshold by 1/`n_batches`
   (`eval.hpp:1129`, `cck.ipp:1601-1645`). Bigger, needs the sliced-trange SUMMA path (already
