@@ -288,6 +288,13 @@ warm checksum matches arena bit-for-bit), and here is also **~40 % faster**
 (the arena packing overhead exceeds its benefit for this ragged-PNO
 workload). All numbers below are owning-ToT.
 
+**Why single-rank MPQC is the reference.** MPQC does run multi-node (PaRSEC
+across node16–31, sif on shared `/proj`), but at these molecule sizes its
+cross-node communication dominates: ethane np=2 is **2.9–5.2× *slower*** than
+single-rank (T2 cold 22.6 s vs 7.73 s, warm 19.9 s vs 3.83 s). MPQC's
+single-rank time is therefore its best case, and the fair target the repro's
+rank sweep is measured against.
+
 ### Warm (steady-state) T2 — the fair comparison
 
 MPQC caches its t-independent intermediates (`cache_imeds`); the fair
@@ -300,12 +307,6 @@ precompute done once) vs MPQC's warmed iteration (`occ2`). T2 wall-time (s):
 | C3H8 | 22.71 | 30.52 | 27.61 | 21.66 | 18.44 | 17.965 | 1.26x |
 | C4H10 | 37.59 | 41.32 | 35.58 | 25.21 | 20.61 | 22.268 | 1.69x |
 | C5H12 | 116.20 | 114.87 | 91.01 | 62.33 | 48.75 | 39.62 | 2.93x |
-| molecule | np1 | np2 | np4 | np8 | np16 | speedup |
-|---|---|---|---|---|---|---|
-| C2H6 | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 | 1.9x |
-| C3H8 | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 | 2.2x |
-| C4H10 | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 | 3.2x |
-| C5H12 | - | - | 215.1 | 149.3 | 114.8 | - |
 
 The repro warm residual **reaches parity-or-better with MPQC at np=16**:
 C₂H₆ 0.83×, C₃H₈ 1.03×, C₄H₁₀ 0.93×, C₅H₁₂ 1.23× (repro/MPQC at np=16). The
@@ -327,7 +328,7 @@ molecule size. T2 wall-time (s):
 | C2H6 | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 | 1.9x |
 | C3H8 | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 | 2.2x |
 | C4H10 | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 | 3.2x |
-| C5H12 | - | - | 215.1 | 149.3 | 114.8 | - |
+| C5H12 | - | 339.0 | 215.1 | 149.3 | 114.8 | - |
 
 Cold repro/MPQC-cold at np=16: C₂H₆ 0.85×, C₃H₈ 0.96×, C₄H₁₀ 0.63×, C₅H₁₂
 0.49× — i.e. at 16 ranks the repro's *cold* whole-residual is up to ~2×
