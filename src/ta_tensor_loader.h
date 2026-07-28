@@ -39,10 +39,26 @@ inline void print_load_row(TA::World& world, const std::string& mol, double load
 
 /// Load one tensor, deriving its tile sizes from its own real shape (see
 /// adaptive_tile_sizes() in ta_builder.h).
+///
+/// SPTC_FLAT_TILES_PER_DIM (2026-07-27), if set, overrides the target
+/// tile count for FLAT arrays only, independent of SPTC_TILES_PER_DIM
+/// (which otherwise also governs ToT arrays' non-pair-key outer dims via
+/// build_tot_array() below) -- flat and ToT tiling may not share the same
+/// optimum now that both have been re-tuned once already (see
+/// adaptive_tile_sizes()'s own comment on knob interaction).
 inline TA::TSpArrayD load_one(TA::World& world, const std::string& path,
                               const std::string& label) {
   auto coo = load_coo(path);
-  auto tile_sizes = adaptive_tile_sizes(coo.shape, coo.rank);
+  std::vector<std::size_t> tile_sizes;
+  if (const char* v = std::getenv("SPTC_FLAT_TILES_PER_DIM")) {
+    std::size_t n = static_cast<std::size_t>(std::atoi(v));
+    if (n > 0) {
+      tile_sizes = adaptive_tile_sizes(coo.shape, coo.rank, n,
+                                       /*check_shared_env=*/false);
+    }
+  }
+  if (tile_sizes.empty())
+    tile_sizes = adaptive_tile_sizes(coo.shape, coo.rank);
   return build_sparse_array(world, coo, tile_sizes, label);
 }
 

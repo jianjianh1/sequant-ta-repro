@@ -96,18 +96,18 @@ inline TA::TSpArrayD permute_ij_3(const TA::TSpArrayD& src) {
 // is unchanged (same leaves, same permute_ij_2/3 needs); only the
 // positional order of this parameter list and the call sites below were
 // updated to match the regenerated generated_R1.cpp/generated_R2.cpp.
-TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_residual(
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_uKu_ap1,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap1_i,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_ap1_uKu,
+ArrayToT whole_t1_residual(
+    const ArrayToT& C_uKu_ap1,
+    const ArrayToT& t_ap1_i,
+    const ArrayToT& C_ap1_uKu,
     const TA::TSpArrayD& f_i_i,
     const TA::TSpArrayD& s_uKu_uKu,
     const TA::TSpArrayD& g_i_uKu_K,
     const TA::TSpArrayD& g_uKu_i_K,
     const TA::TSpArrayD& g_uKu_uKu_K,
     const TA::TSpArrayD& g_i_i_K,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_uKu_ap2,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap2_ap2_i_i,
+    const ArrayToT& C_uKu_ap2,
+    const ArrayToT& t_ap2_ap2_i_i,
     const TA::TSpArrayD& f_i_uKu,
     const TA::TSpArrayD& f_uKu_uKu,
     const TA::TSpArrayD& f_uKu_i);
@@ -123,14 +123,14 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
 // (this ta-bench build): zero hangs, checksums matching the known-correct
 // value every time, and T2 measurably FASTER than the pre-CSE baseline
 // (see plan file's "Phase O third follow-up RESULTS" for the number).
-TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t2_residual(
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_uKu_ap1,
+ArrayToT whole_t2_residual(
+    const ArrayToT& C_uKu_ap1,
     const TA::TSpArrayD& g_i_uKu_K,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap1_i,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_ap2_uKu,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_uKu_ap2,
+    const ArrayToT& t_ap1_i,
+    const ArrayToT& C_ap2_uKu,
+    const ArrayToT& C_uKu_ap2,
     const TA::TSpArrayD& g_uKu_uKu_K,
-    const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap2_ap2_i_i,
+    const ArrayToT& t_ap2_ap2_i_i,
     const TA::TSpArrayD& s_uKu_uKu,
     const TA::TSpArrayD& g_i_i_K,
     const TA::TSpArrayD& f_i_uKu,

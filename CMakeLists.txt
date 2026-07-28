@@ -41,6 +41,17 @@ if(tiledarray_FOUND)
     target_link_libraries(ta_sequant_native_residual_main PRIVATE tiledarray)
     target_include_directories(ta_sequant_native_residual_main
         PRIVATE "${CMAKE_SOURCE_DIR}/src")
+
+    # Warm-loop T2: persistent cache of the t-independent DF/CSV block
+    # (MPQC's volatile/persistent split), SSA-split from the generated T2.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/gen_split/t2_split.cpp")
+        add_executable(ta_warm_t2
+            gen_split/ta_warm_t2_main.cpp
+            gen_split/t2_split.cpp)
+        target_link_libraries(ta_warm_t2 PRIVATE tiledarray)
+        target_include_directories(ta_warm_t2
+            PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/gen_split")
+    endif()
 else()
     message(STATUS "TiledArray not found — run setup-tiledarray.sh first")
 endif()

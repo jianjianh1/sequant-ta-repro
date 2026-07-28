@@ -8,37 +8,38 @@
 #include <tiledarray.h>
 #include <TiledArray/expressions/einsum.h>
 #include <cmath>
+#include "ta_tensors.h"
 
-TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_residual(const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_μ̃_ap1, const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap1_i, const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_ap1_μ̃, const TA::TSpArrayD& f_i_i, const TA::TSpArrayD& s_μ̃_μ̃, const TA::TSpArrayD& g_i_μ̃_Κ, const TA::TSpArrayD& g_μ̃_i_Κ, const TA::TSpArrayD& g_μ̃_μ̃_Κ, const TA::TSpArrayD& g_i_i_Κ, const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& C_μ̃_ap2, const TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>& t_ap2_ap2_i_i, const TA::TSpArrayD& f_i_μ̃, const TA::TSpArrayD& f_μ̃_μ̃, const TA::TSpArrayD& f_μ̃_i) {
+ArrayToT whole_t1_residual(const ArrayToT& C_μ̃_ap1, const ArrayToT& t_ap1_i, const ArrayToT& C_ap1_μ̃, const TA::TSpArrayD& f_i_i, const TA::TSpArrayD& s_μ̃_μ̃, const TA::TSpArrayD& g_i_μ̃_Κ, const TA::TSpArrayD& g_μ̃_i_Κ, const TA::TSpArrayD& g_μ̃_μ̃_Κ, const TA::TSpArrayD& g_i_i_Κ, const ArrayToT& C_μ̃_ap2, const ArrayToT& t_ap2_ap2_i_i, const TA::TSpArrayD& f_i_μ̃, const TA::TSpArrayD& f_μ̃_μ̃, const TA::TSpArrayD& f_μ̃_i) {
   TA::TSpArrayD CSE1_i_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I_i_ap1;
+  ArrayToT I_i_ap1;
   TA::TSpArrayD I_i_μ̃;
   TA::TSpArrayD I2_i_μ̃;
   TA::TSpArrayD CSE2_Κ;
   TA::TSpArrayD I_μ̃_μ̃;
   TA::TSpArrayD CSE3_i_μ̃;
   TA::TSpArrayD I_i_i;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE4_i_i_ap2;
+  ArrayToT CSE4_i_i_ap2;
   TA::TSpArrayD I_Κ;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I2_i_ap2;
+  ArrayToT I2_i_ap2;
   TA::TSpArrayD CSE5_i_μ̃;
   TA::TSpArrayD CSE6_i_i_Κ;
   TA::TSpArrayD I_i_μ̃_Κ;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE7_i_i_i_ap2;
+  ArrayToT CSE7_i_i_i_ap2;
   TA::TSpArrayD I_i_i_Κ;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I_i_ap2_Κ;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE8_i_i_ap2_Κ;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE9_i_i_ap2_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE10_i_i_ap2;
+  ArrayToT I_i_ap2_Κ;
+  ArrayToT CSE8_i_i_ap2_Κ;
+  ArrayToT CSE9_i_i_ap2_μ̃;
+  ArrayToT CSE10_i_i_ap2;
   TA::TSpArrayD CSE11_i_i_μ̃_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I_i_i_ap2_ap2;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I_i_i_ap2_μ̃;
+  ArrayToT I_i_i_ap2_ap2;
+  ArrayToT I_i_i_ap2_μ̃;
   TA::TSpArrayD CSE12_i_i_i_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> I2_i_ap1;
+  ArrayToT I2_i_ap1;
   TA::TSpArrayD I_i_i_μ̃_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE13_i_i_i_ap2;
+  ArrayToT CSE13_i_i_i_ap2;
   TA::TSpArrayD I_i_i_i_μ̃;
-  TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> CSE14_i_i_ap2;
+  ArrayToT CSE14_i_i_ap2;
   CSE1_i_μ̃("i_2,μ̃_19580") = TA::einsum<TA::DeNest::True>(C_μ̃_ap1("i_2,μ̃_19580;a_2"), t_ap1_i("i_2;a_2"), "i_2,μ̃_19580")("i_2,μ̃_19580");
   I2_i_μ̃("i_1,μ̃_19580") = TA::einsum(f_i_i("i_2,i_1"), CSE1_i_μ̃("i_2,μ̃_19580"), "i_1,μ̃_19580")("i_1,μ̃_19580");
   I_i_μ̃("i_1,μ̃_19579") = TA::einsum(I2_i_μ̃("i_1,μ̃_19580"), s_μ̃_μ̃("μ̃_19579,μ̃_19580"), "i_1,μ̃_19579")("i_1,μ̃_19579");
@@ -73,7 +74,7 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_3,i_1;a_4") = TA::einsum(CSE4_i_i_ap2("i_1,i_3;a_3"), t_ap2_ap2_i_i("i_3,i_1;a_3,a_4"), "i_3,i_1;a_4")("i_3,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19629") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_3,i_1;a_4"), C_μ̃_ap2("i_1,i_3,μ̃_19629;a_4"), "i_1,μ̃_19629")("i_1,μ̃_19629");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19628") = TA::einsum(I2_i_μ̃("i_1,μ̃_19629"), s_μ̃_μ̃("μ̃_19628,μ̃_19629"), "i_1,μ̃_19628")("i_1,μ̃_19628");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19628"), C_ap1_μ̃("i_1,μ̃_19628;a_1"), "i_1;a_1")("i_1;a_1")) * (4);
@@ -90,7 +91,7 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_3,i_1;a_4") = TA::einsum(CSE4_i_i_ap2("i_1,i_3;a_3"), t_ap2_ap2_i_i("i_1,i_3;a_3,a_4"), "i_3,i_1;a_4")("i_3,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19656") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_3,i_1;a_4"), C_μ̃_ap2("i_1,i_3,μ̃_19656;a_4"), "i_1,μ̃_19656")("i_1,μ̃_19656");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19655") = TA::einsum(I2_i_μ̃("i_1,μ̃_19656"), s_μ̃_μ̃("μ̃_19655,μ̃_19656"), "i_1,μ̃_19655")("i_1,μ̃_19655");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19655"), C_ap1_μ̃("i_1,μ̃_19655;a_1"), "i_1;a_1")("i_1;a_1")) * (-2);
@@ -108,11 +109,11 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap2_Κ("i_2,i_3,Κ_1;a_3") = TA::einsum(g_i_μ̃_Κ("i_3,μ̃_19593,Κ_1"), C_μ̃_ap2("i_2,i_3,μ̃_19593;a_3"), "i_2,i_3,Κ_1;a_3")("i_2,i_3,Κ_1;a_3");
   CSE7_i_i_i_ap2("i_3,i_2,i_1;a_3") = TA::einsum(I_i_i_Κ("i_1,i_2,Κ_1"), I_i_ap2_Κ("i_2,i_3,Κ_1;a_3"), "i_3,i_2,i_1;a_3")("i_3,i_2,i_1;a_3");
-  I_i_ap2_Κ = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I_i_ap2_Κ = ArrayToT();  // release
   I_i_i_Κ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_3,i_1;a_4") = TA::einsum(CSE7_i_i_i_ap2("i_3,i_2,i_1;a_3"), t_ap2_ap2_i_i("i_3,i_2;a_3,a_4"), "i_2,i_3,i_1;a_4")("i_2,i_3,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19595") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_3,i_1;a_4"), C_μ̃_ap2("i_2,i_3,μ̃_19595;a_4"), "i_1,μ̃_19595")("i_1,μ̃_19595");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19594") = TA::einsum(I2_i_μ̃("i_1,μ̃_19595"), s_μ̃_μ̃("μ̃_19594,μ̃_19595"), "i_1,μ̃_19594")("i_1,μ̃_19594");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19594"), C_ap1_μ̃("i_1,μ̃_19594;a_1"), "i_1;a_1")("i_1;a_1")) * (-2);
@@ -131,7 +132,7 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_3,i_1;a_4") = TA::einsum(CSE7_i_i_i_ap2("i_3,i_2,i_1;a_3"), t_ap2_ap2_i_i("i_2,i_3;a_3,a_4"), "i_2,i_3,i_1;a_4")("i_2,i_3,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19641") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_3,i_1;a_4"), C_μ̃_ap2("i_2,i_3,μ̃_19641;a_4"), "i_1,μ̃_19641")("i_1,μ̃_19641");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19640") = TA::einsum(I2_i_μ̃("i_1,μ̃_19641"), s_μ̃_μ̃("μ̃_19640,μ̃_19641"), "i_1,μ̃_19640")("i_1,μ̃_19640");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += TA::einsum(I_i_μ̃("i_1,μ̃_19640"), C_ap1_μ̃("i_1,μ̃_19640;a_1"), "i_1;a_1")("i_1;a_1");
@@ -152,14 +153,14 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_1;a_4") = TA::einsum(CSE10_i_i_ap2("i_1,i_2;a_3"), t_ap2_ap2_i_i("i_2,i_1;a_3,a_4"), "i_2,i_1;a_4")("i_2,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19637") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_1;a_4"), C_μ̃_ap2("i_1,i_2,μ̃_19637;a_4"), "i_1,μ̃_19637")("i_1,μ̃_19637");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19636") = TA::einsum(I2_i_μ̃("i_1,μ̃_19637"), s_μ̃_μ̃("μ̃_19636,μ̃_19637"), "i_1,μ̃_19636")("i_1,μ̃_19636");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19636"), C_ap1_μ̃("i_1,μ̃_19636;a_1"), "i_1;a_1")("i_1;a_1")) * (-2);
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_1;a_4") = TA::einsum(CSE10_i_i_ap2("i_1,i_2;a_3"), t_ap2_ap2_i_i("i_1,i_2;a_3,a_4"), "i_2,i_1;a_4")("i_2,i_1;a_4");
   I2_i_μ̃("i_1,μ̃_19660") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_1;a_4"), C_μ̃_ap2("i_1,i_2,μ̃_19660;a_4"), "i_1,μ̃_19660")("i_1,μ̃_19660");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19659") = TA::einsum(I2_i_μ̃("i_1,μ̃_19660"), s_μ̃_μ̃("μ̃_19659,μ̃_19660"), "i_1,μ̃_19659")("i_1,μ̃_19659");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += TA::einsum(I_i_μ̃("i_1,μ̃_19659"), C_ap1_μ̃("i_1,μ̃_19659;a_1"), "i_1;a_1")("i_1;a_1");
@@ -167,18 +168,18 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   CSE11_i_i_μ̃_μ̃("i_3,i_2,μ̃_19597,μ̃_19596") = TA::einsum(g_i_μ̃_Κ("i_2,μ̃_19596,Κ_1"), g_i_μ̃_Κ("i_3,μ̃_19597,Κ_1"), "i_3,i_2,μ̃_19597,μ̃_19596")("i_3,i_2,μ̃_19597,μ̃_19596");
   I_i_i_ap2_μ̃("i_1,i_2,i_3,μ̃_19597;a_2") = TA::einsum(CSE11_i_i_μ̃_μ̃("i_3,i_2,μ̃_19597,μ̃_19596"), C_μ̃_ap2("i_1,i_2,μ̃_19596;a_2"), "i_1,i_2,i_3,μ̃_19597;a_2")("i_1,i_2,i_3,μ̃_19597;a_2");
   I_i_i_ap2_ap2("i_1,i_2,i_3;a_2,a_3") = TA::einsum(I_i_i_ap2_μ̃("i_1,i_2,i_3,μ̃_19597;a_2"), C_μ̃_ap2("i_1,i_2,μ̃_19597;a_3"), "i_1,i_2,i_3;a_2,a_3")("i_1,i_2,i_3;a_2,a_3");
-  I_i_i_ap2_μ̃ = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I_i_i_ap2_μ̃ = ArrayToT();  // release
   I_i_i("i_1,i_3") = TA::einsum<TA::DeNest::True>(I_i_i_ap2_ap2("i_1,i_2,i_3;a_2,a_3"), t_ap2_ap2_i_i("i_1,i_2;a_2,a_3"), "i_1,i_3")("i_1,i_3");
-  I_i_i_ap2_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I_i_i_ap2_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19598") = TA::einsum(I_i_i("i_1,i_3"), CSE3_i_μ̃("i_3,μ̃_19598"), "i_1,μ̃_19598")("i_1,μ̃_19598");
   I_i_i = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += TA::einsum(I_i_μ̃("i_1,μ̃_19598"), C_ap1_μ̃("i_1,μ̃_19598;a_1"), "i_1;a_1")("i_1;a_1");
   I_i_μ̃ = TA::TSpArrayD();  // release
   I_i_i_ap2_μ̃("i_1,i_2,i_3,μ̃_19650;a_2") = TA::einsum(CSE11_i_i_μ̃_μ̃("i_3,i_2,μ̃_19650,μ̃_19649"), C_μ̃_ap2("i_1,i_3,μ̃_19649;a_2"), "i_1,i_2,i_3,μ̃_19650;a_2")("i_1,i_2,i_3,μ̃_19650;a_2");
   I_i_i_ap2_ap2("i_1,i_2,i_3;a_2,a_3") = TA::einsum(I_i_i_ap2_μ̃("i_1,i_2,i_3,μ̃_19650;a_2"), C_μ̃_ap2("i_1,i_3,μ̃_19650;a_3"), "i_1,i_2,i_3;a_2,a_3")("i_1,i_2,i_3;a_2,a_3");
-  I_i_i_ap2_μ̃ = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I_i_i_ap2_μ̃ = ArrayToT();  // release
   I_i_i("i_1,i_2") = TA::einsum<TA::DeNest::True>(I_i_i_ap2_ap2("i_1,i_2,i_3;a_2,a_3"), t_ap2_ap2_i_i("i_1,i_3;a_2,a_3"), "i_1,i_2")("i_1,i_2");
-  I_i_i_ap2_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I_i_i_ap2_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19651") = TA::einsum(I_i_i("i_1,i_2"), CSE3_i_μ̃("i_2,μ̃_19651"), "i_1,μ̃_19651")("i_1,μ̃_19651");
   I_i_i = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19651"), C_ap1_μ̃("i_1,μ̃_19651;a_1"), "i_1;a_1")("i_1;a_1")) * (-2);
@@ -191,7 +192,7 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap1("i_1,i_2;a_2") = TA::einsum(f_i_μ̃("i_2,μ̃_19630"), C_μ̃_ap1("i_1,μ̃_19630;a_2"), "i_1,i_2;a_2")("i_1,i_2;a_2");
   I_i_i("i_1,i_2") = TA::einsum<TA::DeNest::True>(I2_i_ap1("i_1,i_2;a_2"), t_ap1_i("i_1;a_2"), "i_1,i_2")("i_1,i_2");
-  I2_i_ap1 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap1 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19631") = TA::einsum(I_i_i("i_1,i_2"), CSE3_i_μ̃("i_2,μ̃_19631"), "i_1,μ̃_19631")("i_1,μ̃_19631");
   I_i_i = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19631"), C_ap1_μ̃("i_1,μ̃_19631;a_1"), "i_1;a_1")("i_1;a_1")) * (-1);
@@ -209,14 +210,14 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   I_i_i_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_3,i_1;a_3") = TA::einsum(CSE13_i_i_i_ap2("i_3,i_2,i_1;a_2"), t_ap2_ap2_i_i("i_3,i_2;a_2,a_3"), "i_2,i_3,i_1;a_3")("i_2,i_3,i_1;a_3");
   I2_i_μ̃("i_1,μ̃_19591") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_3,i_1;a_3"), C_μ̃_ap2("i_2,i_3,μ̃_19591;a_3"), "i_1,μ̃_19591")("i_1,μ̃_19591");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19590") = TA::einsum(I2_i_μ̃("i_1,μ̃_19591"), s_μ̃_μ̃("μ̃_19590,μ̃_19591"), "i_1,μ̃_19590")("i_1,μ̃_19590");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19590"), C_ap1_μ̃("i_1,μ̃_19590;a_1"), "i_1;a_1")("i_1;a_1")) * (-2);
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_3,i_1;a_3") = TA::einsum(CSE13_i_i_i_ap2("i_3,i_2,i_1;a_2"), t_ap2_ap2_i_i("i_2,i_3;a_2,a_3"), "i_2,i_3,i_1;a_3")("i_2,i_3,i_1;a_3");
   I2_i_μ̃("i_1,μ̃_19613") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_3,i_1;a_3"), C_μ̃_ap2("i_2,i_3,μ̃_19613;a_3"), "i_1,μ̃_19613")("i_1,μ̃_19613");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19612") = TA::einsum(I2_i_μ̃("i_1,μ̃_19613"), s_μ̃_μ̃("μ̃_19612,μ̃_19613"), "i_1,μ̃_19612")("i_1,μ̃_19612");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += TA::einsum(I_i_μ̃("i_1,μ̃_19612"), C_ap1_μ̃("i_1,μ̃_19612;a_1"), "i_1;a_1")("i_1;a_1");
@@ -224,14 +225,14 @@ TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy> whole_t1_re
   CSE14_i_i_ap2("i_1,i_2;a_2") = TA::einsum(f_i_μ̃("i_2,μ̃_19600"), C_μ̃_ap2("i_1,i_2,μ̃_19600;a_2"), "i_1,i_2;a_2")("i_1,i_2;a_2");
   I2_i_ap2("i_2,i_1;a_3") = TA::einsum(CSE14_i_i_ap2("i_1,i_2;a_2"), t_ap2_ap2_i_i("i_1,i_2;a_2,a_3"), "i_2,i_1;a_3")("i_2,i_1;a_3");
   I2_i_μ̃("i_1,μ̃_19602") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_1;a_3"), C_μ̃_ap2("i_1,i_2,μ̃_19602;a_3"), "i_1,μ̃_19602")("i_1,μ̃_19602");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19601") = TA::einsum(I2_i_μ̃("i_1,μ̃_19602"), s_μ̃_μ̃("μ̃_19601,μ̃_19602"), "i_1,μ̃_19601")("i_1,μ̃_19601");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19601"), C_ap1_μ̃("i_1,μ̃_19601;a_1"), "i_1;a_1")("i_1;a_1")) * (-1);
   I_i_μ̃ = TA::TSpArrayD();  // release
   I2_i_ap2("i_2,i_1;a_3") = TA::einsum(CSE14_i_i_ap2("i_1,i_2;a_2"), t_ap2_ap2_i_i("i_2,i_1;a_2,a_3"), "i_2,i_1;a_3")("i_2,i_1;a_3");
   I2_i_μ̃("i_1,μ̃_19605") = TA::einsum<TA::DeNest::True>(I2_i_ap2("i_2,i_1;a_3"), C_μ̃_ap2("i_1,i_2,μ̃_19605;a_3"), "i_1,μ̃_19605")("i_1,μ̃_19605");
-  I2_i_ap2 = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>();  // release
+  I2_i_ap2 = ArrayToT();  // release
   I_i_μ̃("i_1,μ̃_19604") = TA::einsum(I2_i_μ̃("i_1,μ̃_19605"), s_μ̃_μ̃("μ̃_19604,μ̃_19605"), "i_1,μ̃_19604")("i_1,μ̃_19604");
   I2_i_μ̃ = TA::TSpArrayD();  // release
   I_i_ap1("i_1;a_1") += (TA::einsum(I_i_μ̃("i_1,μ̃_19604"), C_ap1_μ̃("i_1,μ̃_19604;a_1"), "i_1;a_1")("i_1;a_1")) * (2);

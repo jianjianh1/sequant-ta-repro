@@ -7,7 +7,22 @@
 // T2) — outer indices are block-sparse-tiled (occupied + PAO), inner
 // indices are the virtual/PNO axis restricted to one occupied-index-tuple's
 // own (small) PNO count. See build_tot_array() in ta_builder.h.
-using ArrayToT = TA::DistArray<TA::Tensor<TA::ArenaTensor<double>>, TA::SparsePolicy>;
+//
+// Inner-tile type is compile-time selectable (performance-parity: unlock
+// multithreading). Default `TA::ArenaTensor<double>` matches MPQC's
+// production layout (arena-pinned, SIMD-slab-packed inner cells) but its
+// cells are NON-OWNING views into an arena page whose lifetime is the outer
+// tile's shared_ptr, freed cross-thread by MADNESS lazy deletion -> segfaults
+// at MAD_NUM_THREADS>1 (see MPQC_COMPARISON.md §14). Define SPTC_OWNING_TOT
+// to use plain owning `TA::Tensor<double>` inner cells (refcount their own
+// storage; no cross-thread dangling) — numerically identical per TA's own
+// tests (einsum.cpp arena_matches_owning), at the cost of the arena packing.
+#ifdef SPTC_OWNING_TOT
+using SPTC_ToT_Tile = TA::Tensor<TA::Tensor<double>>;
+#else
+using SPTC_ToT_Tile = TA::Tensor<TA::ArenaTensor<double>>;
+#endif
+using ArrayToT = TA::DistArray<SPTC_ToT_Tile, TA::SparsePolicy>;
 
 // Loaded tensors for one molecule. Field names mirror those used in the
 // equation expressions. All 11 leaves from mpqc4:traces/all_equations.txt,

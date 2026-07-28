@@ -27,7 +27,7 @@
 /// molecule-size mismatch.
 inline std::vector<std::size_t> adaptive_tile_sizes(
     const std::array<std::size_t, 4>& shape, int rank,
-    std::size_t target_tiles_per_dim = 8) {
+    std::size_t target_tiles_per_dim = 8, bool check_shared_env = true) {
   // EXPERIMENT (2026-07-20, performance-parity investigation): allow
   // overriding the target tile count per dimension without touching the
   // shared default (which every ta-bench tool relies on) -- used to test
@@ -48,14 +48,42 @@ inline std::vector<std::size_t> adaptive_tile_sizes(
   // own optimum flipping after pinning -- these knobs interact, so
   // re-sweep this one too after any further scheduling-level change
   // rather than assuming today's optimum is stable.
-  if (const char* v = std::getenv("SPTC_TILES_PER_DIM")) {
-    std::size_t n = static_cast<std::size_t>(std::atoi(v));
-    if (n > 0) target_tiles_per_dim = n;
+  //
+  // `check_shared_env=false` lets a caller (e.g. load_one() below, via
+  // SPTC_FLAT_TILES_PER_DIM) supply an already-resolved target that
+  // bypasses this shared env lookup -- otherwise SPTC_TILES_PER_DIM,
+  // when set, would silently override ANY explicit target_tiles_per_dim
+  // argument, making a per-call-site override impossible.
+  if (check_shared_env) {
+    if (const char* v = std::getenv("SPTC_TILES_PER_DIM")) {
+      std::size_t n = static_cast<std::size_t>(std::atoi(v));
+      if (n > 0) target_tiles_per_dim = n;
+    }
+  }
+  // Coarse-occ override (2026-07-27, performance-parity gap-closer,
+  // env-gated): match real MPQC's occ_tile_size by tiling any dimension
+  // whose extent equals the occupied-space size (SPTC_COARSE_OCC, e.g. 9
+  // for ethane frozen-core) at SPTC_OCC_TILE (default 4) instead of the
+  // adaptive size. Applied HERE so every tensor's occ-indexed dims — flat
+  // arrays (via load_one) and ToT non-pair-key dims — share one identical
+  // TiledRange1; build_tot_array applies the same override to pair-key
+  // dims with a padded-uniform inner per tile. Consistency across all
+  // occ-indexed dims is required: a contraction over occ needs matching
+  // tilings on both operands (mismatch corrupts the heap — see §7).
+  std::size_t occ_ext = 0, occ_tile = 4;
+  if (const char* v = std::getenv("SPTC_COARSE_OCC")) {
+    long n = std::atol(v); if (n > 0) occ_ext = static_cast<std::size_t>(n);
+  }
+  if (const char* v = std::getenv("SPTC_OCC_TILE")) {
+    long n = std::atol(v); if (n > 0) occ_tile = static_cast<std::size_t>(n);
   }
   std::vector<std::size_t> sizes(rank);
   for (int d = 0; d < rank; ++d) {
     std::size_t extent = shape[d];
-    sizes[d] = std::max<std::size_t>(1, extent / target_tiles_per_dim);
+    if (occ_ext && extent == occ_ext)
+      sizes[d] = std::min(extent, occ_tile);
+    else
+      sizes[d] = std::max<std::size_t>(1, extent / target_tiles_per_dim);
   }
   return sizes;
 }
@@ -299,6 +327,30 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
   RealTilingSpec real_spec;
   if (use_real_tiling) real_spec = load_real_tiling_spec(real_tiling_sidecar);
 
+  // Coarse-occ gap-closer (2026-07-27, env-gated via SPTC_COARSE_OCC): tile
+  // the pair-key (occupied) dims at SPTC_OCC_TILE like real MPQC instead of
+  // forcing size 1, computing the padded-uniform per-tile inner size in
+  // code (the same mechanism the sidecar spec supplies, but derived from
+  // this array's own pair_range so every ToT array coarsens consistently).
+  std::size_t coarse_occ_ext = 0, coarse_occ_tile = 4;
+  if (const char* v = std::getenv("SPTC_COARSE_OCC")) {
+    long n = std::atol(v); if (n > 0) coarse_occ_ext = static_cast<std::size_t>(n);
+  }
+  if (const char* v = std::getenv("SPTC_OCC_TILE")) {
+    long n = std::atol(v); if (n > 0) coarse_occ_tile = static_cast<std::size_t>(n);
+  }
+  const bool use_coarse = coarse_occ_ext > 0 && !use_real_tiling;
+  // SPTC_COARSE_PAD=0 opts a coarse (multi-pair) outer tile into a RAGGED
+  // per-pair inner size (each outer element keeps its own PNO count) rather
+  // than one padded-uniform size per tile — exactly how real MPQC sizes its
+  // ToT inner cells. This is the "per-position varying inner Range within
+  // one tile" pattern the size-1 default was built to avoid (it crashed
+  // TA::einsum on 84411a6, eq10 SIGSEGV); testing whether cd53bd3 handles
+  // it, which would remove the padding waste and match MPQC exactly.
+  bool coarse_pad = true;
+  if (const char* v = std::getenv("SPTC_COARSE_PAD")) coarse_pad = std::atoi(v) != 0;
+  const bool use_padded = use_real_tiling || (use_coarse && coarse_pad);
+
   // Pass 0: group by pair key -> (min_inner, max_inner) across all inner
   // columns combined (C2/T2's two virtual axes share one per-pair domain).
   std::map<std::vector<long>, std::pair<long, long>> pair_range;
@@ -382,6 +434,11 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
       }
     }
     outer_trange = TA::TiledRange(tr1s.begin(), tr1s.end());
+  } else if (use_coarse) {
+    // Pair-key (occupied) dims are coarsened to occ_tile by the adaptive
+    // override (extent==occ_ext -> occ_tile); non-pair dims keep adaptive.
+    // Same result as the sidecar spec, boundaries derived in code.
+    outer_trange = make_trange(outer_shape, full_adaptive);
   } else {
     std::vector<std::size_t> outer_tile_sizes(outer_rank);
     for (int d = 0; d < outer_rank; ++d)
@@ -389,6 +446,28 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
     outer_trange = make_trange(outer_shape, outer_tile_sizes);
   }
   const auto& tiles_range = outer_trange.tiles_range();
+
+  // Coarse mode: derive the padded-uniform per-tile inner size (max PNO
+  // count over the pairs a tile spans) from this array's own pair_range,
+  // keyed by the pair-key tile multi-index — exactly what the sidecar's
+  // tile_pad_volume supplies, so the shared inner_range_fn (use_padded)
+  // path below is reused verbatim.
+  if (use_coarse && coarse_pad) {
+    for (const auto& [pk, lohi] : pair_range) {
+      std::vector<long> rep(outer_rank, 0);
+      for (int d = 0; d < pair_key_rank; ++d) rep[d] = pk[d];
+      auto ord = outer_trange.element_to_tile(rep);
+      auto midx = tiles_range.idx(ord);
+      std::vector<long> pad_key(pair_key_rank);
+      for (int d = 0; d < pair_key_rank; ++d)
+        pad_key[d] = static_cast<long>(midx[d]);
+      long npno = lohi.second - lohi.first + 1;
+      auto it = real_spec.tile_pad_volume.find(pad_key);
+      if (it == real_spec.tile_pad_volume.end() ||
+          static_cast<long>(it->second) < npno)
+        real_spec.tile_pad_volume[pad_key] = static_cast<std::size_t>(npno);
+    }
+  }
 
   // Pass 1: per-outer-tile norms (sum of squares over every cell's every
   // inner element in that tile) for the outer SparseShape.
@@ -444,7 +523,7 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
         // an empty frozen-orbital tile that should never reach this
         // branch since init_tiles_nested only visits non-zero tiles).
         std::size_t inner_size;
-        if (use_real_tiling) {
+        if (use_padded) {
           auto ord = outer_trange.element_to_tile(outer_coord);
           auto tile_multi_idx = tiles_range.idx(ord);
           std::vector<long> pad_key(pair_key_rank);
