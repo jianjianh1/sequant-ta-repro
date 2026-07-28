@@ -367,10 +367,16 @@ faster proto=45 owning path. (proto=100 is validated bit-exact vs MPQC on small-
 and at R(T=0), with a ~0.2% cc-pVTZ t-dependent order-sensitivity — a real property of the
 ragged-ToT contraction — but that's moot since it isn't faster.) Hexane stays out regardless:
 proto=100 clears its OOM but then aborts at 16-node scale with a separate TA/MADNESS heap
-corruption. **The residual cold gap at np=16 is genuine** — MPQC's runtime evaluator
-distributes the DF half-transform across ranks better than the repro's static einsum sequence,
-and closing it further needs matching MPQC's evaluation approach (aux-Κ batching / occ-batch /
-runtime cache), a generator/backend project beyond in-repo tuning.
+corruption. **The residual cold gap at np=16 is genuine, and it is a tiling/distribution gap,
+not a "MPQC forms less" gap.** In these runs MPQC's aux-Κ batching was *off*
+(`batch:aux_target_size` default 0), so MPQC *also* materializes the whole giant μ̃Κ
+intermediate and calls the *same* `TA::einsum` SUMMA on the same TiledArray — its runtime cache
+avoids recomputation, not size. The difference is that MPQC's DF-carrying arrays inherit the CSV
+solver's `TiledRange`/`SparseShape`/`pmap` (so SUMMA load-balances the intermediate the way the
+solver laid out the occupied space), while the repro builds its own tiling and takes TiledArray's
+default pmap in `build_tot_array`. Closing it is therefore an in-repo tiling/pmap lever, not a
+whole new evaluator — see `MPQC_EVALUATION.md` for the stage-by-stage trace and the three
+concrete levers.
 
 **Gap-closing attempts (what did and didn't move it).** (1) *Owning-ToT* is the cold fix
 that worked (§ above) — it makes the giant DF intermediate tractable and, at multi-rank,
@@ -384,8 +390,19 @@ distributed across ~250 small ragged-ToT ops (no single-op lever). Net: the ~7% 
 aside, the residual gap is not closable by in-repo tuning — it is MPQC's runtime-evaluator DF
 distribution, and matching it needs the evaluator's aux-Κ batching / occ-batch / runtime cache.
 
-**Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC and is
-numerically correct, but at real (cc-pVTZ) scale and equal ranks MPQC's runtime
-evaluator + tiling handle the DF half-transform intermediate substantially more
-efficiently (~2× warm, ~5× cold). The gap is now pinned to that one intermediate; closing it further needs matching MPQC's
-evaluation approach (aux-Κ batching / runtime cache), not an in-repo tuning lever.
+**Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC, on the same
+TiledArray, and is numerically correct; both sides even materialize the same giant DF
+half-transform intermediate (MPQC's aux-batching was off in these runs). At real (cc-pVTZ) scale
+and equal ranks MPQC is still ~2× warm / ~5× cold faster, and the gap is now pinned to three
+concrete, named levers (full trace in `MPQC_EVALUATION.md`):
+1. **Cold np=16 → pmap co-location** of the DF-carrying ToT arrays. MPQC's operands inherit the
+   CSV solver's `trange`/`shape`/`pmap` (`cck.ipp:1563-1565`); the repro's take TA's default from
+   a self-chosen tiling (`ta_builder.h:363`). The same SUMMA, load-balanced differently. A tiling
+   sweep (`MPQC_EVALUATION.md` verification) rules out occ tile *size* as the lever (finer = no
+   change, coarser = worse) — it is the **pmap**, addressable in `build_tot_array`.
+2. **Hexane memory wall → aux-Κ batching** (`eval.hpp:1129`, `cck.ipp:1601-1645`): stream Κ in
+   tile-aligned slices over the persistent DF terms so the intermediate is never fully formed.
+   *A generator/backend project; the memory fix, independent of (1).*
+3. **Warm ~2× → mostly fundamental.** ~7% via `SPTC_TILES_PER_DIM=6`; the rest is distributed
+   across ~250 small ragged-ToT ops — the static sequence vs the runtime evaluator, addressable
+   only by a representation/backend change.
