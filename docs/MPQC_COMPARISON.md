@@ -31,8 +31,8 @@ and there MPQC is faster for every real molecule (repro ~2–3× slower warm,
 residual, where MPQC's small-workload overhead dominates). The gap is pinned
 to one giant DF-half-transform intermediate that the repro materialises —
 which both scales worse across ranks and is a hard memory wall (it OOMs
-hexane even across 16 nodes) — and which the generator's proto-extent lever
-could avoid.
+hexane even across 16 nodes) — which the generator's proto-extent lever avoids for the
+feasible molecules (though hexane hits a further TA-level memory bug).
 
 ---
 
@@ -354,7 +354,7 @@ exhausts memory even across all 16 nodes for the repro (`std::bad_alloc`) — th
 intermediate is a memory wall (MPQC single-rank hexane also OOMs at 63 GB; MPQC
 multi-node clears it). The **`proto=100` generator lever** (raising `optimize()`'s
 PNO/proto extent so the cost model never forms the giant intermediate) gives a 3×
-cold speedup at np=1 and would clear the hexane wall. It is **validated correct where MPQC ground truth exists** — bit-exact on the small-basis ethane (matches MPQC's 0.2141888066 to ~1e-7) and at R(T=0) on cc-pVTZ. At cc-pVTZ its *t-dependent* residual diverges from proto=45 by ~0.2% element-wise (amplified to ~7% in the near-zero, heavily-cancelling sum) — decisively **not** block screening (persists with screening off), CSE, or float reassociation, but a genuine order-sensitivity of the ragged-per-pair-PNO tensor-of-tensor contraction at large PNO (combining ToT operands with different per-pair inner ranges does an implicit, order-dependent domain reconciliation), plausibly within the method's own PNO truncation. So proto=100 is a **viable 3x / hexane-unlocking optimization**, pending a cc-pVTZ nonzero-t ground-truth check (blocked only by the `amps_post_solve` amplitude alignment) to confirm which order best tracks MPQC.
+cold speedup at np=1 and is **validated correct where MPQC ground truth exists** — bit-exact on the small-basis ethane (matches MPQC's 0.2141888066 to ~1e-7) and at R(T=0) on cc-pVTZ. At cc-pVTZ its *t-dependent* residual diverges from proto=45 by ~0.2% element-wise (amplified to ~7% in the near-zero, heavily-cancelling sum) — decisively **not** block screening (persists with screening off), CSE, or float reassociation, but a genuine order-sensitivity of the ragged-per-pair-PNO tensor-of-tensor contraction at large PNO (combining ToT operands with different per-pair inner ranges does an implicit, order-dependent domain reconciliation), plausibly within the method's own PNO truncation. (It does NOT by itself unlock hexane: proto=100 avoids the giant-intermediate OOM, but hexane still aborts at 16-node scale with heap corruption — a separate TA/MADNESS memory bug — so hexane needs a backend-level fix regardless.) So proto=100 is a **viable 3x / hexane-unlocking optimization**, pending a cc-pVTZ nonzero-t ground-truth check (blocked only by the `amps_post_solve` amplitude alignment) to confirm which order best tracks MPQC.
 
 **Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC and is
 numerically correct, but at real (cc-pVTZ) scale and equal ranks MPQC's runtime
