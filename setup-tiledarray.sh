@@ -7,6 +7,9 @@
 # Why cd53bd3 (not upstream tip, not the older 84411a6): its TA::einsum
 # handles the multi-pair tensor-of-tensor tiles produced by this code's
 # coarse occupied tiling (SPTC_COARSE_OCC); earlier commits crashed on them.
+# NOTE: cd53bd3 lives ONLY on the jianjianh1/tiledarray fork (head of branch
+# csv-cck-summa-root-fix), NOT on upstream ValeevGroup -- this is the exact
+# revision real MPQC builds against, so the two sides share an identical TA.
 #
 # The repro executable MUST be built with the same compiler (clang++-21) --
 # see README.md.
@@ -29,7 +32,7 @@ fi
 
 mkdir -p "$SCRIPT_DIR/third_party"
 if [[ ! -d "$CLONE_DIR/.git" ]]; then
-  git clone https://github.com/ValeevGroup/tiledarray.git "$CLONE_DIR"
+  git clone https://github.com/jianjianh1/tiledarray.git "$CLONE_DIR"
 fi
 git -C "$CLONE_DIR" fetch --depth 1 origin "$COMMIT" 2>/dev/null || git -C "$CLONE_DIR" fetch origin
 git -C "$CLONE_DIR" checkout "$COMMIT"

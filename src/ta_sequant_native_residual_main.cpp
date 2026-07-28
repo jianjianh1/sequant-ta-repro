@@ -81,6 +81,15 @@ int main(int argc, char** argv) {
   if (MKL_Set_Num_Threads) MKL_Set_Num_Threads(1);
   TA::World& world = TA_SCOPED_INITIALIZE(argc, argv);
 
+  // SPTC_SPARSE_THRESHOLD: override TA's global block-screening threshold.
+  // Different contraction factorizations screen different blocks; lowering
+  // this recovers a factorization-invariant residual (see MPQC's own
+  // per-batch threshold scaling, cck.ipp).
+  if (const char* v = std::getenv("SPTC_SPARSE_THRESHOLD")) {
+    world.gop.fence();
+    TA::SparseShape<float>::threshold(static_cast<float>(std::atof(v)));
+  }
+
   // EXPERIMENT (2026-07-22, performance-parity investigation, Phase M):
   // MADNESS's ThreadPool defaults every idle worker thread to an
   // uncapped busy-spin (WaitPolicy::Busy) on ONE shared, spinlock-

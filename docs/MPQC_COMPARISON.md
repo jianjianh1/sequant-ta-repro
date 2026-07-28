@@ -22,6 +22,16 @@ cc-pVDZ-F12 / aug-cc-pVDZ-RI, frozen-core; `ethane-perf.json`). All
 `mpqc4:`/`src/` line numbers are as of this writing. Every timing below is
 correctness-gated on the reference checksums (see Verification).
 
+**§11 extends this from a single ethane point to the alkane series
+C₂H₆–C₅H₁₂ (cc-pVTZ) with a 1-rank-per-node sweep over CloudLab node16–31.**
+At real basis-set scale the repro is at **warm parity** (≤1.3× at np=16,
+faster for small molecules) and, because its work distributes across ranks
+while MPQC's reference is single-rank, **beats MPQC's cold whole-residual at
+np=16** (down to 0.49× for C₅H₁₂). The one remaining structural gap — the
+giant DF-half-transform intermediate — is also a memory wall (it OOMs hexane
+even across 16 nodes) and is addressable via the generator's proto-extent
+factorization.
+
 ---
 
 ## 1. What real MPQC does — the six axes
@@ -255,3 +265,108 @@ Env-gated knobs leave defaults untouched when unset:
   completes with no segfault at NT=8; np=2/4 checksums bit-identical to np=1.
 - CloudLab: build on node-local disk; watch disk headroom and the
   experiment expiry clock.
+
+## 11. Scaling across molecules and ranks (alkanes C₂H₆–C₆H₁₄, nodes 16–31)
+
+The ethane parity study (§1–10) is one point. This section extends it to the
+linear-alkane series **C₂H₆, C₃H₈, C₄H₁₀, C₅H₁₂** (cc-pVTZ / cc-pVTZ-RI, the
+`jianjianh1/mpqc-alkanes-v3` dataset) and a **rank sweep np ∈ {1,2,4,8,16},
+one MPI rank per node across CloudLab node16–31**. C₆H₁₄ is discussed under
+*Limits* below. Both sides use the identical TiledArray fork commit `cd53bd3`
+and the same SeQuant derivation; MPQC references are fresh single-rank
+instrumented runs (`WholeResidualWallTime`), the repro is the generated
+`TA::einsum` sequence at the locked coarse-tiling config
+(`SPTC_COARSE_OCC=9 SPTC_OCC_TILE=2 SPTC_COARSE_PAD=0 SPTC_TILES_PER_DIM=8`,
+`MAD_NUM_THREADS=8`, `--bind-to none`).
+
+**Tensor layout: owning-ToT is required at multi-rank.** The default
+`TA::ArenaTensor` inner tile (arena-pinned, SIMD-slab-packed) segfaults at
+np ≥ 8 for the larger molecules — a cross-rank lazy-deletion race in
+MADNESS. Compiling with `-DSPTC_OWNING_TOT` (plain owning `TA::Tensor<double>`
+inner cells) removes the race, is numerically identical (verified: C₂H₆
+warm checksum matches arena bit-for-bit), and here is also **~40 % faster**
+(the arena packing overhead exceeds its benefit for this ragged-PNO
+workload). All numbers below are owning-ToT.
+
+### Warm (steady-state) T2 — the fair comparison
+
+MPQC caches its t-independent intermediates (`cache_imeds`); the fair
+comparison is the repro's t-dependent-only warm residual (`ta_warm_t2`,
+precompute done once) vs MPQC's warmed iteration (`occ2`). T2 wall-time (s):
+
+| molecule | np1 | np2 | np4 | np8 | np16 | MPQC warm | ratio(np1) |
+|---|---|---|---|---|---|---|---|
+| C2H6 | 2.96 | 4.54 | 4.30 | 3.63 | 3.17 | 3.827 | 0.77x |
+| C3H8 | 22.71 | 30.52 | 27.61 | 21.66 | 18.44 | 17.965 | 1.26x |
+| C4H10 | 37.59 | 41.32 | 35.58 | 25.21 | 20.61 | 22.268 | 1.69x |
+| C5H12 | 116.20 | 114.87 | 91.01 | 62.33 | 48.75 | 39.62 | 2.93x |
+| molecule | np1 | np2 | np4 | np8 | np16 | speedup |
+|---|---|---|---|---|---|---|
+| C2H6 | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 | 1.9x |
+| C3H8 | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 | 2.2x |
+| C4H10 | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 | 3.2x |
+| C5H12 | - | - | 215.1 | 149.3 | 114.8 | - |
+
+The repro warm residual **reaches parity-or-better with MPQC at np=16**:
+C₂H₆ 0.83×, C₃H₈ 1.03×, C₄H₁₀ 0.93×, C₅H₁₂ 1.23× (repro/MPQC at np=16). The
+warm work is small, so rank-scaling is modest and np=2 is often *slower* than
+np=1 (MPI/communication overhead exceeds the parallelism benefit); the gain
+appears at np=8–16 for the larger molecules.
+
+### Cold (whole-residual) T2 — multi-rank recovers the one-time gap
+
+The cold residual recomputes the t-independent DF/CSV block every call. At
+np=1 this is ~10× MPQC's cold first-iteration (the single giant μ̃Κ
+DF-half-transform intermediate, §3/§6). But that work **distributes across
+ranks**, and MPQC's reference is single-rank, so the repro's cold residual
+catches and passes MPQC's cold time as ranks grow — increasingly so with
+molecule size. T2 wall-time (s):
+
+| molecule | np1 | np2 | np4 | np8 | np16 | speedup |
+|---|---|---|---|---|---|---|
+| C2H6 | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 | 1.9x |
+| C3H8 | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 | 2.2x |
+| C4H10 | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 | 3.2x |
+| C5H12 | - | - | 215.1 | 149.3 | 114.8 | - |
+
+Cold repro/MPQC-cold at np=16: C₂H₆ 0.85×, C₃H₈ 0.96×, C₄H₁₀ 0.63×, C₅H₁₂
+0.49× — i.e. at 16 ranks the repro's *cold* whole-residual is up to ~2×
+faster than MPQC's single-rank cold, and the advantage grows with molecule
+size (self-speedup np1→16: ~1.9× / 2.2× / 3.2× for C₂H₆/C₃H₈/C₄H₁₀).
+
+### Correctness
+
+Timing is gauge-independent. Correctness is anchored on the gauge-free
+R(T=0): feeding zero t-amplitudes, the repro reproduces MPQC's occurrence-1
+residual. For C₃H₈ this matched **exactly** (T2 nnz 261914, sum
+14.9251990396 vs MPQC 14.9251990396 to ~13 digits), validating the residual
+math and the leaf conversion. Within each sweep, checksums are rank-invariant
+across all np (the multi-rank correctness gate).
+
+### Limits
+
+- **Hexane (C₆H₁₄) is beyond the repro's capacity at this factorization.**
+  Its t-independent giant intermediate (occ 19, PNO 351, RI 906) exhausts
+  memory even distributed across all 16 nodes (`std::bad_alloc` at np=16).
+  Notably MPQC's *single-rank* hexane run also OOM-kills (63 GB) — hexane
+  needs MPQC multi-rank, and the repro needs a factorization that never
+  materialises the giant intermediate. This makes the giant intermediate not
+  just the cold-*time* bottleneck (§3) but a memory *wall*.
+- **The `proto=100` generator lever** (raising `optimize()`'s PNO/proto
+  extent so the cost model avoids the giant intermediate) gives a **3× cold
+  speedup at np=1** and would sidestep the hexane memory wall — but it
+  currently changes the t-dependent residual ~7 % for an as-yet-unresolved
+  order-dependent reason (not screening, CSE, padding, or output convention;
+  see the `gap-fix-proto-extent` investigation). It is a concrete,
+  high-value open item: validating/fixing it would both close the cold gap
+  and unlock hexane.
+
+### Takeaway
+
+At real (cc-pVTZ) scale the repro is **at parity with MPQC on the fair warm
+residual (≤1.3× at np=16, faster for small molecules)** and, because its work
+distributes across ranks while MPQC's reference is single-rank, **beats MPQC
+on the cold whole-residual at np=16 (down to 0.49× for C₅H₁₂)**. The single
+remaining structural gap is the giant DF-half-transform intermediate, which
+is both a serial-time and a memory bottleneck and is addressable via the
+generator's proto-extent factorization.
