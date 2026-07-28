@@ -189,149 +189,39 @@ inline TA::TSpArrayD build_sparse_array(TA::World& world,
   return array;
 }
 
-/// Real-tiling proof-of-concept (see plan: "Use MPQC's real ToT tile
-/// structure to fix ta_benchmark's eq64 hang"). MPQC's own real production
-/// `.tile.tns` dumps (structural-only; see
-/// `/users/jianjian/mpqc4/bin/tns-to-sptc-coo.py`'s `read_tile_boundaries()`,
-/// which generates the sidecars this loads) show MPQC does NOT tile
-/// pair-key dims singly — real tiles group 3-4 pair-keys, with DIFFERENT
-/// PNO counts sharing one tile, and MPQC doesn't crash. The likely reason
-/// this file's own earlier coarsening attempt (see the comment on
-/// `build_tot_array()` below) crashed: it computed a distinct inner `Range`
-/// per outer POSITION within one tile. This loader instead supplies
-/// externally-derived real tile boundaries plus a single PADDED inner size
-/// per TILE (every position in a tile shares one Range, zero-padded past
-/// its own true count) — the mechanism difference the plan is testing.
-struct RealTilingSpec {
-  // One boundary list per pair-key dimension, TA::TiledRange1-ready
-  // (first entry 0, last entry = that dimension's full extent).
-  std::vector<std::vector<std::size_t>> dim_boundaries;
-  // {tile multi-index (first pair_key_rank dims only) -> padded inner size}
-  std::map<std::vector<long>, std::size_t> tile_pad_volume;
-};
-
-/// Parse the plain-text sidecar `tns-to-sptc-coo.py`'s `write_tiling_spec()`
-/// emits:
-///   # pair_key_rank=<N>
-///   # dim <d> boundaries: <b0> <b1> ... <bK>     (one line per dim)
-///   <tile_idx_0> ... <tile_idx_{N-1}> <pad_volume>   (one line per tile)
-inline RealTilingSpec load_real_tiling_spec(const std::string& path) {
-  RealTilingSpec spec;
-  std::ifstream in(path);
-  if (!in) throw std::runtime_error("cannot open real tiling sidecar: " + path);
-
-  int pair_key_rank = -1;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (line.empty()) continue;
-    if (line[0] == '#') {
-      if (line.rfind("# pair_key_rank=", 0) == 0) {
-        pair_key_rank = std::stoi(line.substr(16));
-        spec.dim_boundaries.assign(pair_key_rank, {});
-      } else if (line.rfind("# dim ", 0) == 0) {
-        int d = std::stoi(line.substr(6));
-        auto colon = line.find(':');
-        std::istringstream iss(line.substr(colon + 1));
-        std::size_t v;
-        while (iss >> v) spec.dim_boundaries[d].push_back(v);
-      }
-      continue;
-    }
-    if (pair_key_rank < 0)
-      throw std::runtime_error(path + ": data row before '# pair_key_rank=' header");
-    std::istringstream iss(line);
-    std::vector<long> tile_idx(pair_key_rank);
-    for (int d = 0; d < pair_key_rank; ++d) iss >> tile_idx[d];
-    std::size_t pad_volume;
-    iss >> pad_volume;
-    spec.tile_pad_volume[tile_idx] = pad_volume;
-  }
-  return spec;
-}
-
-/// Build a tensor-of-tensor (ToT) array from COO data, reconstructing MPQC's
-/// real per-(occupied-index-tuple)-restricted PNO/OSV structure — the
-/// representation that actually bounds memory for equations combining
-/// several simultaneous virtual/PNO indices (see eq64: a flat translation
-/// treats each virtual axis as a global ~600-wide dimension, when in the
-/// real per-pair-restricted structure it's only ever tens of values wide).
+/// Build a tensor-of-tensor (ToT) array from COO data, reconstructing the
+/// per-(occupied-index-tuple)-restricted PNO/OSV structure: `outer_rank`
+/// leading dims are block-sparse/outer (e.g. i,m for C1); the remaining
+/// `inner_rank` trailing dims are the per-pair-restricted virtual/PNO axes.
+/// `pair_key_rank` (<= outer_rank) is how many LEADING outer dims form the
+/// occupied-index tuple that determines a pair's PNO count (1 for C1/T1, 2
+/// for C2/T2).
 ///
-/// `outer_rank` leading dims are block-sparse/outer (e.g. i,m for C1);
-/// the remaining `inner_rank` trailing dims are the per-pair-restricted
-/// virtual/PNO axes (e.g. a for C1). `pair_key_rank` (<= outer_rank) is how
-/// many of the LEADING outer dims are the occupied-index tuple that
-/// determines a pair's PNO count (1 for C1/T1's single occupied index, 2 for
-/// C2/T2's occupied pair).
-///
-/// By default (`real_tiling_sidecar` empty), pair-key dims are tiled singly
-/// (one occupied index per tile) so every outer tile maps to exactly one
-/// pair key and therefore one well-defined inner Range. This constraint is
-/// load bearing for the DEFAULT construction, not a convenience shortcut: a
-/// prior pass here tried coarsening pair-key tiling under the theory that
-/// `TA::Tensor<Tensor<double>>` supports a ragged inner size per outer
-/// position, so a straddling tile would still be correct. That looked safe
-/// on ethane/propane/butane (checksums matched the pre-change baseline)
-/// purely because their occupied dim is small enough that adaptive tiling
-/// already rounds down to size 1 for those dims regardless — the "fix" was
-/// a no-op there. Pentane's occupied dim (21) is the first size where
-/// adaptive tiling produces tile size >1 (21/8=2) for a pair-key dim, and
-/// that's exactly where `TA::einsum` crashed (SIGSEGV, invalid-permissions
-/// fault, eq10) — confirming a per-POSITION-varying inner Range within one
-/// tile is unsafe. (NOT, it turns out, proof that a multi-pair tile itself
-/// is unsafe — see `RealTilingSpec` above: MPQC's own real tiles group
-/// multiple pairs successfully, using one padded, uniform inner Range per
-/// TILE instead. `real_tiling_sidecar`, when non-empty, opts into exactly
-/// that mechanism instead of the default size-1 path — see
-/// `results/README.md`'s "eq64 hang" section for the full investigation.)
-///
-/// Verified directly against ethane's real per-pair PNO counts: for a given
-/// pair key, the virtual index's raw ("global") values form a *contiguous*
-/// range, so `a_local = a_global - min_a_for_pair` needs no sidecar file —
-/// derived here from one scan of the COO data alone.
-///
-/// UPDATE (2026-07-26, performance-parity investigation): actually tried
-/// `real_tiling_sidecar` end-to-end on ethane's c2_tot (real MPQC tile
-/// boundaries generated via mpqc-benchmark's tns-to-sptc-coo.py, grouping
-/// 3-4 pairs/tile per MPQC's own production tiling) to test whether
-/// coarser ToT tiling closes some of the ~2.5x/4.5x wall-time gap vs. real
-/// MPQC. Result: a SECOND, DISTINCT crash -- `AddressSanitizer: heap-
-/// buffer-overflow` inside `Eigen::internal::handmade_aligned_free`,
-/// triggered when a `SparseShape<float>`'s internal tile-norms `Tensor`
-/// (this function's own `tile_norms`/`sp_shape`, a few lines below) gets
-/// destroyed via MADNESS's asynchronous, cross-thread lazy-deletion path
-/// (`WorldGopInterface::lazy_sync_children`/`lazy_deleter`) -- allocated on
-/// the main thread, freed on a MADNESS worker thread, and by then the
-/// aligned allocator's own bookkeeping reads as corrupted. This is NOT the
-/// same bug the tile-size-1 restriction above guards against (that one was
-/// a per-position ragged-inner-Range issue inside `TA::einsum`; this one
-/// is in `SparseShape`'s interaction with cross-thread deferred deletion,
-/// triggered simply by the OUTER array spanning >1 pair per tile at all,
-/// before any contraction even happens). Root-caused via AddressSanitizer
-/// (a plain gdb backtrace only showed a `malloc(): invalid next size`
-/// abort several frames away from the real fault, inside
-/// `ProcGrid::make_row_phase_pmap`). Looks like a genuine TiledArray/
-/// MADNESS-side issue on the pinned `84411a6` commit, not something fixable
-/// in this file -- `real_tiling_sidecar` should be considered UNSAFE unless
-/// a newer TiledArray commit is confirmed to fix it (same posture as the
-/// tile-size-1 default above: don't re-attempt coarsening without
-/// re-verifying against whatever commit is current at the time).
+/// TILING CONTROL (the point of this repo): by default the pair-key
+/// (occupied) dims are tiled singly — one pair per outer tile, each with
+/// its own inner Range. Set `SPTC_COARSE_OCC=<occ_extent>` to instead tile
+/// those dims coarsely at `SPTC_OCC_TILE` (default 4), matching real MPQC's
+/// `occ_tile_size` (fewer, larger tiles → less task-scheduling overhead).
+/// A coarse tile spans several pairs; `SPTC_COARSE_PAD=1` (default) gives
+/// every position in the tile one padded-uniform inner size (max PNO count
+/// over its pairs), while `SPTC_COARSE_PAD=0` keeps a ragged per-pair inner
+/// size (matches MPQC's layout, no zero-padding). Coarse ToT tiling
+/// requires a TiledArray whose einsum handles multi-pair tiles (>= cd53bd3);
+/// older commits crash on them.
 template <typename ArrayToT>
 inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
                                 int outer_rank, int inner_rank,
                                 int pair_key_rank,
-                                const std::string& label = "",
-                                const std::string& real_tiling_sidecar = "") {
+                                const std::string& label = "") {
   using InnerT = typename ArrayToT::value_type::value_type;  // TA::Tensor<double>
 
-  const bool use_real_tiling = !real_tiling_sidecar.empty();
-  RealTilingSpec real_spec;
-  if (use_real_tiling) real_spec = load_real_tiling_spec(real_tiling_sidecar);
-
-  // Coarse-occ gap-closer (2026-07-27, env-gated via SPTC_COARSE_OCC): tile
-  // the pair-key (occupied) dims at SPTC_OCC_TILE like real MPQC instead of
+  // Coarse-occ tiling control (env-gated via SPTC_COARSE_OCC): tile the
+  // pair-key (occupied) dims at SPTC_OCC_TILE like real MPQC instead of
   // forcing size 1, computing the padded-uniform per-tile inner size in
-  // code (the same mechanism the sidecar spec supplies, but derived from
-  // this array's own pair_range so every ToT array coarsens consistently).
+  // code (derived from this array's own pair_range so every ToT array
+  // coarsens consistently). tile_pad_volume: pair-key tile multi-index ->
+  // padded inner size, populated below when SPTC_COARSE_PAD=1.
+  std::map<std::vector<long>, std::size_t> tile_pad_volume;
   std::size_t coarse_occ_ext = 0, coarse_occ_tile = 4;
   if (const char* v = std::getenv("SPTC_COARSE_OCC")) {
     long n = std::atol(v); if (n > 0) coarse_occ_ext = static_cast<std::size_t>(n);
@@ -339,17 +229,18 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
   if (const char* v = std::getenv("SPTC_OCC_TILE")) {
     long n = std::atol(v); if (n > 0) coarse_occ_tile = static_cast<std::size_t>(n);
   }
-  const bool use_coarse = coarse_occ_ext > 0 && !use_real_tiling;
+  const bool use_coarse = coarse_occ_ext > 0;
   // SPTC_COARSE_PAD=0 opts a coarse (multi-pair) outer tile into a RAGGED
   // per-pair inner size (each outer element keeps its own PNO count) rather
   // than one padded-uniform size per tile — exactly how real MPQC sizes its
   // ToT inner cells. This is the "per-position varying inner Range within
   // one tile" pattern the size-1 default was built to avoid (it crashed
-  // TA::einsum on 84411a6, eq10 SIGSEGV); testing whether cd53bd3 handles
-  // it, which would remove the padding waste and match MPQC exactly.
+  // TA::einsum on the older 84411a6 commit, eq10 SIGSEGV). The pinned
+  // cd53bd3 commit handles it correctly (checksums match), so ragged
+  // inner sizing removes the padding waste and matches MPQC exactly.
   bool coarse_pad = true;
   if (const char* v = std::getenv("SPTC_COARSE_PAD")) coarse_pad = std::atoi(v) != 0;
-  const bool use_padded = use_real_tiling || (use_coarse && coarse_pad);
+  const bool use_padded = use_coarse && coarse_pad;
 
   // Pass 0: group by pair key -> (min_inner, max_inner) across all inner
   // columns combined (C2/T2's two virtual axes share one per-pair domain).
@@ -420,24 +311,9 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
   std::vector<std::size_t> outer_shape(coo.shape.begin(), coo.shape.begin() + outer_rank);
   auto full_adaptive = adaptive_tile_sizes(coo.shape, outer_rank);
   TA::TiledRange outer_trange;
-  if (use_real_tiling) {
-    // Pair-key dims use MPQC's real tile boundaries (RealTilingSpec, may
-    // group multiple pairs per tile); other dims keep the existing
-    // adaptive-size approach.
-    std::vector<TA::TiledRange1> tr1s(outer_rank);
-    for (int d = 0; d < outer_rank; ++d) {
-      if (d < pair_key_rank) {
-        const auto& b = real_spec.dim_boundaries[d];
-        tr1s[d] = TA::TiledRange1(b.begin(), b.end());
-      } else {
-        tr1s[d] = make_tr1(outer_shape[d], full_adaptive[d]);
-      }
-    }
-    outer_trange = TA::TiledRange(tr1s.begin(), tr1s.end());
-  } else if (use_coarse) {
+  if (use_coarse) {
     // Pair-key (occupied) dims are coarsened to occ_tile by the adaptive
     // override (extent==occ_ext -> occ_tile); non-pair dims keep adaptive.
-    // Same result as the sidecar spec, boundaries derived in code.
     outer_trange = make_trange(outer_shape, full_adaptive);
   } else {
     std::vector<std::size_t> outer_tile_sizes(outer_rank);
@@ -462,10 +338,10 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
       for (int d = 0; d < pair_key_rank; ++d)
         pad_key[d] = static_cast<long>(midx[d]);
       long npno = lohi.second - lohi.first + 1;
-      auto it = real_spec.tile_pad_volume.find(pad_key);
-      if (it == real_spec.tile_pad_volume.end() ||
+      auto it = tile_pad_volume.find(pad_key);
+      if (it == tile_pad_volume.end() ||
           static_cast<long>(it->second) < npno)
-        real_spec.tile_pad_volume[pad_key] = static_cast<std::size_t>(npno);
+        tile_pad_volume[pad_key] = static_cast<std::size_t>(npno);
     }
   }
 
@@ -529,8 +405,8 @@ inline ArrayToT build_tot_array(TA::World& world, const COOTensor& coo,
           std::vector<long> pad_key(pair_key_rank);
           for (int d = 0; d < pair_key_rank; ++d)
             pad_key[d] = static_cast<long>(tile_multi_idx[d]);
-          auto pit = real_spec.tile_pad_volume.find(pad_key);
-          inner_size = (pit != real_spec.tile_pad_volume.end())
+          auto pit = tile_pad_volume.find(pad_key);
+          inner_size = (pit != tile_pad_volume.end())
                            ? pit->second
                            : static_cast<std::size_t>(std::max<long>(n_pno, 0));
         } else {

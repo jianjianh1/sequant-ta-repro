@@ -1,57 +1,55 @@
 #!/usr/bin/env bash
-# setup-tiledarray.sh — clone, build, and install TiledArray at the commit
-# this repo's CMakeLists.txt is pinned to (84411a6), into
-# third_party/tiledarray-84411a6/install (CMakeLists.txt's default
-# TA_INSTALL_DIR).
+# Build TiledArray at commit cd53bd3 (the revision real MPQC tracks) with
+# clang-21 + OpenBLAS, into third_party/tiledarray-cd53bd3-clang/install
+# (the prefix CMakeLists.txt defaults to), then complete the install --
+# this commit's install rules omit some MADNESS/TiledArray headers.
 #
-# Why 84411a6 and not upstream tip: a real internal bug in TA::einsum for a
-# flat-operand x ToT-operand contraction that shares AND contracts an outer
-# index (segfault / Boost bounds assertion) was found in an earlier
-# checkout, hit by ~1/3 of the real PNO-CCSD T1/T2 residual terms. 84411a6
-# computes the correct result for the identical pattern (verified against
-# an independent numpy ground truth). See CMakeLists.txt's own comment.
+# Why cd53bd3 (not upstream tip, not the older 84411a6): its TA::einsum
+# handles the multi-pair tensor-of-tensor tiles produced by this code's
+# coarse occupied tiling (SPTC_COARSE_OCC); earlier commits crashed on them.
 #
-# Usage: ./setup-tiledarray.sh [--jobs N]
+# The repro executable MUST be built with the same compiler (clang++-21) --
+# see README.md.
 #
-# Prerequisites: g++ >= 11 (C++20), cmake >= 3.21, MPI (OpenMPI or MPICH),
-# OpenBLAS dev headers.
-#   Debian/Ubuntu: sudo apt install build-essential g++-13 cmake libopenblas-dev libopenmpi-dev
+# Prereqs: clang-21 / clang++-21, cmake >= 3.21, an MPI (OpenMPI/MPICH),
+# libopenblas-dev, libhwloc-dev, network access (fetches MADNESS + deps).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMIT=cd53bd3e04b28519b06a12b743c45824a588fff5
+CLONE_DIR="$SCRIPT_DIR/third_party/tiledarray-cd53bd3-clang"
+PREFIX="$CLONE_DIR/install"
+BUILD="$CLONE_DIR/build"
 JOBS="$(nproc)"
-COMMIT="84411a6"
-CLONE_DIR="$SCRIPT_DIR/third_party/tiledarray-84411a6"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --jobs) JOBS="$2"; shift 2 ;;
-    -h|--help) echo "Usage: $0 [--jobs N]"; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; exit 1 ;;
-  esac
-done
-
-if [[ -d "$CLONE_DIR/install/lib/cmake/tiledarray" ]]; then
-  echo "TiledArray already installed at $CLONE_DIR/install — remove it to force a rebuild."
+if [[ -d "$PREFIX/lib/cmake/tiledarray" ]]; then
+  echo "TiledArray already installed at $PREFIX — remove it to force a rebuild."
   exit 0
 fi
 
 mkdir -p "$SCRIPT_DIR/third_party"
-if [[ ! -d "$CLONE_DIR" ]]; then
+if [[ ! -d "$CLONE_DIR/.git" ]]; then
   git clone https://github.com/ValeevGroup/tiledarray.git "$CLONE_DIR"
 fi
-git -C "$CLONE_DIR" fetch --depth 1 origin "$COMMIT" 2>/dev/null || true
+git -C "$CLONE_DIR" fetch --depth 1 origin "$COMMIT" 2>/dev/null || git -C "$CLONE_DIR" fetch origin
 git -C "$CLONE_DIR" checkout "$COMMIT"
 
-cd "$CLONE_DIR"
-cmake -S . -B build \
+cmake -S "$CLONE_DIR" -B "$BUILD" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="$CLONE_DIR/install" \
+  -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_C_COMPILER=clang-21 \
   -DCMAKE_CXX_FLAGS="-fno-lto -DLAPACK_FORTRAN_ADD_" \
   -DCMAKE_C_FLAGS="-fno-lto" \
   -DENABLE_MPI=ON \
-  -DBLAS_PREFERENCE_LIST=OpenBLAS
-cmake --build build -j"$JOBS"
-cmake --build build --target install
+  -DBLAS_PREFERENCE_LIST=OpenBLAS \
+  -DTA_TTG=OFF
+cmake --build "$BUILD" -j"$JOBS"
+cmake --build "$BUILD" --target install
 
-echo "TiledArray installed to $CLONE_DIR/install"
+# Complete the install: cd53bd3's install rules omit all of madness/misc/,
+# ~180 MADNESS headers, and TiledArray .ipp files. Copy the missing ones
+# from the build/source trees (no-clobber preserves generated config headers).
+cp -rn "$BUILD"/_deps/madness-src/src/madness/. "$PREFIX/include/madness/" 2>/dev/null || true
+cp -rn "$CLONE_DIR"/src/TiledArray/. "$PREFIX/include/TiledArray/" 2>/dev/null || true
+
+echo "TiledArray installed + completed at $PREFIX"

@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "ta_dumper.h"  // ChecksumResult, ta_compute_checksum, ta_dump_if_enabled
+#include "ta_dumper.h"  // ChecksumResult, ta_compute_checksum
 
 struct TAStageResult {
   std::string equation;

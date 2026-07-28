@@ -4,36 +4,30 @@ project(sequant_ta_repro CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Sequential LP64 BLAS: single-threaded, leaving the cores for TA's own
-# task scheduler.
-set(BLA_VENDOR Intel10_64lp_seq)
-find_package(BLAS REQUIRED)
-
-# Prepend the TiledArray install prefix so transitive find_dependency()
-# calls (boost_headers, umpire, blaspp, range-v3, ...) resolve through TA's
-# own lib/cmake/ subdirectories rather than expecting a system install.
-# Build this prefix with setup-tiledarray.sh.
-#
-# Pinned to commit 84411a6 (NOT the newer upstream tip): confirmed a real
-# internal bug in TA::einsum for a flat-operand x ToT-operand contraction
-# that shares AND contracts an outer index (segfault / Boost bounds
-# assertion) in the original checkout used before this pin, hit by ~1/3 of
-# the real PNO-CCSD T1/T2 residual terms; 84411a6 computes the correct
-# result for the identical pattern, verified against an independent numpy
-# ground truth. Override TA_INSTALL_DIR to test a different commit.
-set(TA_INSTALL_DIR "${CMAKE_SOURCE_DIR}/third_party/tiledarray-84411a6/install"
+# TiledArray install prefix. Build it with ./setup-tiledarray.sh, which
+# pins commit cd53bd3 -- the TiledArray revision real MPQC tracks -- whose
+# TA::einsum correctly handles the multi-pair tensor-of-tensor tiles this
+# code's coarse occupied tiling produces (older commits crashed on them).
+# BLAS (OpenBLAS), MPI, Boost, umpire, range-v3, etc. all resolve
+# transitively through this prefix's lib/cmake, so no separate find_package
+# is needed. Build the repro with the SAME compiler as TA (clang++-21) --
+# see README.md.
+set(TA_INSTALL_DIR "${CMAKE_SOURCE_DIR}/third_party/tiledarray-cd53bd3-clang/install"
     CACHE PATH "TiledArray install prefix")
 list(PREPEND CMAKE_PREFIX_PATH "${TA_INSTALL_DIR}")
-find_package(tiledarray QUIET
-    HINTS "${TA_INSTALL_DIR}/lib/cmake/tiledarray")
+find_package(tiledarray QUIET HINTS "${TA_INSTALL_DIR}/lib/cmake/tiledarray")
+
+# Optional diagnostic / benchmark tools (see tools/README.md); off by
+# default so the core build is just the residual driver.
+option(SPTC_BUILD_TOOLS "Build the investigation tools under tools/" OFF)
 
 if(tiledarray_FOUND)
     message(STATUS "TiledArray found — building ta_sequant_native_residual_main")
 
-    # Native SeQuant TiledArrayGenerator output (generated_t{1,2}_residual.cpp,
-    # pasted verbatim -- see src/ta_sequant_native_residual.h for
-    # provenance/regeneration instructions) driven against real leaf data via
-    # the TATensors loader (src/ta_tensor_loader.h).
+    # The explicit SeQuant -> TiledArray contraction sequence
+    # (generated_t{1,2}_residual.cpp, pasted verbatim; see
+    # src/ta_sequant_native_residual.h for provenance and regeneration),
+    # driven against real leaf data via src/ta_tensor_loader.h.
     add_executable(ta_sequant_native_residual_main
         src/ta_sequant_native_residual_main.cpp
         src/generated_t1_residual.cpp
@@ -42,16 +36,17 @@ if(tiledarray_FOUND)
     target_include_directories(ta_sequant_native_residual_main
         PRIVATE "${CMAKE_SOURCE_DIR}/src")
 
-    # Warm-loop T2: persistent cache of the t-independent DF/CSV block
-    # (MPQC's volatile/persistent split), SSA-split from the generated T2.
-    if(EXISTS "${CMAKE_SOURCE_DIR}/gen_split/t2_split.cpp")
+    if(SPTC_BUILD_TOOLS AND EXISTS "${CMAKE_SOURCE_DIR}/tools/gen_split/t2_split.cpp")
+        # Warm-loop T2 benchmark: persistent cache of the t-independent
+        # DF/CSV block (MPQC's volatile/persistent split), SSA-split from
+        # the generated T2. See tools/README.md.
         add_executable(ta_warm_t2
-            gen_split/ta_warm_t2_main.cpp
-            gen_split/t2_split.cpp)
+            tools/gen_split/ta_warm_t2_main.cpp
+            tools/gen_split/t2_split.cpp)
         target_link_libraries(ta_warm_t2 PRIVATE tiledarray)
         target_include_directories(ta_warm_t2
-            PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/gen_split")
+            PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools/gen_split")
     endif()
 else()
-    message(STATUS "TiledArray not found — run setup-tiledarray.sh first")
+    message(STATUS "TiledArray not found — run ./setup-tiledarray.sh first")
 endif()

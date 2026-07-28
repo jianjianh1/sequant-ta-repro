@@ -6,7 +6,7 @@ partitions), so correctness is checksum-verifiable."""
 import re, os
 
 SRC = "/users/jianjian/sequant-ta-repro/src/generated_t2_residual.cpp"
-OUT = "/users/jianjian/sequant-ta-repro/gen_split/t2_split.cpp"
+OUT = "/users/jianjian/sequant-ta-repro/tools/gen_split/t2_split.cpp"
 FLAT = "TA::TSpArrayD"
 TOT = "ArrayToT"
 

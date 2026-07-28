@@ -224,16 +224,11 @@ tested and found *not* to be the difference.
 
 ```bash
 # 1. TiledArray cd53bd3 (the revision MPQC tracks), clang-21, OpenBLAS,
-#    then complete its incomplete install (headers).
-./setup-tiledarray-cd53bd3.sh                 # (+ -clang / -parsec variants)
-cp -rn third_party/tiledarray-cd53bd3/build/_deps/madness-src/src/madness/. \
-       third_party/tiledarray-cd53bd3/install/include/madness/
-cp -rn third_party/tiledarray-cd53bd3/src/TiledArray/. \
-       third_party/tiledarray-cd53bd3/install/include/TiledArray/
-# 2. Build the repro with clang-21 against it.
-cmake -B build-cd53bd3-clang -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_C_COMPILER=clang-21 \
-  -DTA_INSTALL_DIR=$PWD/third_party/tiledarray-cd53bd3-clang/install .
+#    completing its incomplete install (headers) automatically.
+./setup-tiledarray.sh
+# 2. Build the repro with clang-21 against it (tools = the warm benchmark).
+cmake -B build-cd53bd3-clang -DCMAKE_BUILD_TYPE=Release -DSPTC_BUILD_TOOLS=ON \
+  -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_C_COMPILER=clang-21 .
 cmake --build build-cd53bd3-clang -j --target ta_sequant_native_residual_main ta_warm_t2
 # 3a. Cold residual (fair vs MPQC cold 4.15 s):
 SPTC_COARSE_OCC=9 SPTC_OCC_TILE=2 SPTC_COARSE_PAD=0 SPTC_TILES_PER_DIM=4 \

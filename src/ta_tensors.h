@@ -13,7 +13,7 @@
 // production layout (arena-pinned, SIMD-slab-packed inner cells) but its
 // cells are NON-OWNING views into an arena page whose lifetime is the outer
 // tile's shared_ptr, freed cross-thread by MADNESS lazy deletion -> segfaults
-// at MAD_NUM_THREADS>1 (see MPQC_COMPARISON.md §14). Define SPTC_OWNING_TOT
+// at MAD_NUM_THREADS>1 (see docs/MPQC_COMPARISON.md §8). Define SPTC_OWNING_TOT
 // to use plain owning `TA::Tensor<double>` inner cells (refcount their own
 // storage; no cross-thread dangling) — numerically identical per TA's own
 // tests (einsum.cpp arena_matches_owning), at the cost of the arena packing.

@@ -1,9 +1,9 @@
 #ifndef SPTC_TA_TENSOR_LOADER_H
 #define SPTC_TA_TENSOR_LOADER_H
 
-// Shared TATensors-loading logic, factored out of ta_benchmark_main.cpp so
-// ta_trace_benchmark_main.cpp (mpqc_trace_equations.h's checksum-validation
-// harness) can reuse it without duplicating the COO-load/tiling path.
+// Shared TATensors-loading logic: loads all leaf tensors from a trace
+// directory as TiledArray sparse arrays (flat + tensor-of-tensor), applying
+// the tiling chosen in ta_builder.h. Used by the residual driver.
 
 #include <tiledarray.h>
 
@@ -66,11 +66,10 @@ inline TA::TSpArrayD load_one(TA::World& world, const std::string& path,
 /// outer_rank/inner_rank/pair_key_rank per the table in ta_tensors.h.
 inline ArrayToT load_one_tot(TA::World& world, const std::string& path,
                              int outer_rank, int inner_rank, int pair_key_rank,
-                             const std::string& label,
-                             const std::string& real_tiling_sidecar = "") {
+                             const std::string& label) {
   auto coo = load_coo(path);
   return build_tot_array<ArrayToT>(world, coo, outer_rank, inner_rank,
-                                   pair_key_rank, label, real_tiling_sidecar);
+                                   pair_key_rank, label);
 }
 
 /// Load all 11 tensors for a molecule as TiledArray sparse arrays, plus
@@ -98,18 +97,7 @@ inline TATensors load_ta_tensors(TA::World& world, const std::string& dir) {
   // c1 outer=(i,m) inner=(a) pair=(i); c2 outer=(i,i,m) inner=(a) pair=(i,i);
   // t_i_a outer=(i) inner=(a) pair=(i); t_i_i_a_a outer=(i,i) inner=(a,a) pair=(i,i).
   ts.c1_tot = load_one_tot(world, dir + "/C_m_1_a_1_i_1.txt", 2, 1, 1, "c1_tot");
-  std::string c2_tot_sidecar;
-  if (const char* v = std::getenv("SPTC_REAL_TOT_TILING"); v && std::atoi(v) != 0) {
-    std::string spec_dir = "ta-bench/data/tiling_specs";
-    if (const char* d = std::getenv("SPTC_TILING_SPEC_DIR")) spec_dir = d;
-    std::string mol = fs::path(dir).filename().string();
-    c2_tot_sidecar = spec_dir + "/" + mol + "_c2_tot.tiling.txt";
-    if (world.rank() == 0)
-      std::cerr << "  [SPTC_REAL_TOT_TILING=1] c2_tot using real tiling from "
-                << c2_tot_sidecar << "\n";
-  }
-  ts.c2_tot = load_one_tot(world, dir + "/C_m_1_a_1_i_1_i_2.txt", 3, 1, 2,
-                           "c2_tot", c2_tot_sidecar);
+  ts.c2_tot = load_one_tot(world, dir + "/C_m_1_a_1_i_1_i_2.txt", 3, 1, 2, "c2_tot");
   ts.t_i_a_tot = load_one_tot(world, dir + "/t_i_1_a_1.txt", 1, 1, 1, "t_i_a_tot");
   ts.t_i_i_a_a_tot =
       load_one_tot(world, dir + "/t_i_1_i_2_a_1_a_2.txt", 2, 2, 2, "t_i_i_a_a_tot");
