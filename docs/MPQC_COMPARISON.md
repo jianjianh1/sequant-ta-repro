@@ -31,8 +31,10 @@ and there MPQC is faster for every real molecule (repro ~2–3× slower warm,
 residual, where MPQC's small-workload overhead dominates). The gap is pinned
 to one giant DF-half-transform intermediate that the repro materialises —
 which both scales worse across ranks and is a hard memory wall (it OOMs
-hexane even across 16 nodes) — which the generator's proto-extent lever avoids for the
-feasible molecules (though hexane hits a further TA-level memory bug).
+hexane even across 16 nodes). Owning-ToT makes that intermediate tractable on the feasible
+molecules; the residual gap is MPQC's runtime evaluator distributing the DF work across ranks
+better than the repro's static einsum sequence (the proto-extent lever, an arena-era idea, is
+superseded by owning-ToT — see §11).
 
 ---
 
@@ -352,12 +354,38 @@ identical, and is ~40 % faster here.
 **Limits & the path to close the gap.** Hexane (C₆H₁₄, occ 19 / PNO 351 / RI 906)
 exhausts memory even across all 16 nodes for the repro (`std::bad_alloc`) — the giant
 intermediate is a memory wall (MPQC single-rank hexane also OOMs at 63 GB; MPQC
-multi-node clears it). The **`proto=100` generator lever** (raising `optimize()`'s
-PNO/proto extent so the cost model never forms the giant intermediate) gives a 3×
-cold speedup at np=1 and is **validated correct where MPQC ground truth exists** — bit-exact on the small-basis ethane (matches MPQC's 0.2141888066 to ~1e-7) and at R(T=0) on cc-pVTZ. At cc-pVTZ its *t-dependent* residual diverges from proto=45 by ~0.2% element-wise (amplified to ~7% in the near-zero, heavily-cancelling sum) — decisively **not** block screening (persists with screening off), CSE, or float reassociation, but a genuine order-sensitivity of the ragged-per-pair-PNO tensor-of-tensor contraction at large PNO (combining ToT operands with different per-pair inner ranges does an implicit, order-dependent domain reconciliation), plausibly within the method's own PNO truncation. (It does NOT by itself unlock hexane: proto=100 avoids the giant-intermediate OOM, but hexane still aborts at 16-node scale with heap corruption — a separate TA/MADNESS memory bug — so hexane needs a backend-level fix regardless.) So proto=100 is a **viable 3x / hexane-unlocking optimization**, pending a cc-pVTZ nonzero-t ground-truth check (blocked only by the `amps_post_solve` amplitude alignment) to confirm which order best tracks MPQC.
+multi-node clears it). **The cold-precompute fix that worked was owning-ToT, not proto=100.** The giant μ̃Κ
+intermediate is only catastrophic with the default arena inner tile (`TA::ArenaTensor`): there
+it costs ~70 s serial, and a generator lever (`proto=100`, raising `optimize()`'s PNO/proto
+extent so the cost model never forms it) cut cold T2 ~3× at np=1. But **owning-ToT**
+(`-DSPTC_OWNING_TOT`, already required for multi-rank stability) makes that same intermediate
+cheap, and proto=100's extra-op factorization then loses everywhere: single-node C₂H₆ cold
+proto=45 11.6 s vs proto=100 18.9 s; at np=16, 6.6 vs 13.8 s (proto=45's giant intermediate
+distributes across ranks better than proto=100's alternative). So proto=100 is an arena-era
+optimization superseded by owning-ToT and is **not adopted**; the cold numbers above are the
+faster proto=45 owning path. (proto=100 is validated bit-exact vs MPQC on small-basis ethane
+and at R(T=0), with a ~0.2% cc-pVTZ t-dependent order-sensitivity — a real property of the
+ragged-ToT contraction — but that's moot since it isn't faster.) Hexane stays out regardless:
+proto=100 clears its OOM but then aborts at 16-node scale with a separate TA/MADNESS heap
+corruption. **The residual cold gap at np=16 is genuine** — MPQC's runtime evaluator
+distributes the DF half-transform across ranks better than the repro's static einsum sequence,
+and closing it further needs matching MPQC's evaluation approach (aux-Κ batching / occ-batch /
+runtime cache), a generator/backend project beyond in-repo tuning.
+
+**Gap-closing attempts (what did and didn't move it).** (1) *Owning-ToT* is the cold fix
+that worked (§ above) — it makes the giant DF intermediate tractable and, at multi-rank,
+distributes it well. (2) *proto=100* (generator extent) is superseded by owning and not adopted
+(slower everywhere with owning). (3) *R2 symmetrization* — MPQC checksums R2 after
+`0.5·(R[i,j;a,b]+R[j,i;b,a])`; the repro's R2 is in fact ~antisymmetric under that swap and its
+RAW value is what matches the reference, so symmetrizing is neither applied nor a reconciler
+(tested: it preserves the divergent sum). (4) *Warm tiling* — the warm optimum is `TILES_PER_DIM=6`,
+~7% faster than the cold-optimal 8 (C₂H₆ warm 2.75 s vs 2.97 s); the rest of the ~2× warm gap is
+distributed across ~250 small ragged-ToT ops (no single-op lever). Net: the ~7% warm tiling win
+aside, the residual gap is not closable by in-repo tuning — it is MPQC's runtime-evaluator DF
+distribution, and matching it needs the evaluator's aux-Κ batching / occ-batch / runtime cache.
 
 **Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC and is
 numerically correct, but at real (cc-pVTZ) scale and equal ranks MPQC's runtime
 evaluator + tiling handle the DF half-transform intermediate substantially more
-efficiently (~2× warm, ~5× cold). The gap is now pinned to that one intermediate and
-one actionable generator lever (proto-extent factorization).
+efficiently (~2× warm, ~5× cold). The gap is now pinned to that one intermediate; closing it further needs matching MPQC's
+evaluation approach (aux-Κ batching / runtime cache), not an in-repo tuning lever.

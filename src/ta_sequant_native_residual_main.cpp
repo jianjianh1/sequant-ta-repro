@@ -56,6 +56,17 @@ static void time_residual_stage(TA::World& world, const std::string& equation,
   world.gop.fence();
   auto t_wall = Clock::now();
 
+  // EXPERIMENT (SPTC_SYMMETRIZE_R2): MPQC checksums R2 after the pair
+  // symmetrization 0.5*(R[i,j;a,b]+R[j,i;b,a]) (cck.ipp:1753-1755). Test whether
+  // symmetrizing reconciles the proto=45/proto=100 t-dependent divergence.
+  if (equation == "whole_t2_residual" && std::getenv("SPTC_SYMMETRIZE_R2")) {
+    ArrayToT rsym;
+    rsym("i_1,i_2;a_1,a_2") =
+        0.5 * (r("i_1,i_2;a_1,a_2") + r("i_2,i_1;a_2,a_1"));
+    world.gop.fence();
+    r = rsym;
+  }
+
   ChecksumResult cs = ta_compute_checksum(world, r);
 
   TAStageResult res;
