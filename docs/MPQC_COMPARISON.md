@@ -400,8 +400,12 @@ concrete, named levers (full trace in `MPQC_EVALUATION.md`):
    change, coarser = worse) and a cyclic input pmap that eliminates the idle ranks does not either
    (48.9 s → 49.9 s, checksum-invariant) — TA re-maps operands into its own SUMMA layout. The
    bottleneck is *inside* the ToT `einsum`: one contraction is ~87 % of cold T2 and runs ~100× off
-   peak (per-outer-cell tile-task overhead). The real lever is a SeQuant factorization making
-   (μ̃,Κ) the ToT *inner* index (few large cells vs ~4 M tiny per-pair cells) or a TA backend fix.
+   peak (per-outer-cell tile-task overhead). A generator refactor was tried and refuted too
+   (`MPQC_EVALUATION.md` §8): `(μ̃,Κ)`-inner is structurally impossible (inner ⇔ proto; μ̃,Κ are
+   non-proto), and no correctness-safe optimizer setting reduces the tiny-cell intermediate
+   (`OptFor::Memsize`→3, `NO_CSE`→4 vs Flops→2; only proto=100→0, the slower/divergent path). So
+   the fix is a TA backend improvement to flat×ToT contraction, or a derivation-level change giving
+   the PAO index μ̃ a per-pair proto domain — not any in-repo generator/tiling/pmap knob.
 2. **Hexane memory wall → aux-Κ batching** (`eval.hpp:1129`, `cck.ipp:1601-1645`): stream Κ in
    tile-aligned slices over the persistent DF terms so the intermediate is never fully formed.
    *A generator/backend project; the memory fix, independent of (1).*

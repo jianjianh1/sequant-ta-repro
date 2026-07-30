@@ -355,11 +355,42 @@ The cold-gap bottleneck is *inside* the ToT `einsum` — consistent with the ear
 (`MPQC_COMPARISON.md`/campaign notes: one contraction is ~87 % of cold T2 and runs ~100× off
 peak = per-outer-cell ToT tile-task overhead, not flops, not distribution). **Lever (a) as
 "fix the input pmap" is therefore refuted as a timing fix.** `SPTC_CYCLIC_PMAP` is kept as a
-correct, gated diagnostic (it does balance the inputs), but the real cold lever is narrower still:
-the ToT `einsum`'s per-cell cost for the giant DF half-transform — addressable only by a
-*representation* change (a SeQuant factorization that makes (μ̃,Κ) the ToT **inner** index, so the
-intermediate is a few large cells instead of ~4 M tiny per-pair cells) or a TA backend improvement
-to flat×ToT contraction, not by any pmap/tiling knob.
+correct, gated diagnostic (it does balance the inputs), but the real cold cost is the ToT
+`einsum`'s per-outer-cell overhead for the giant DF half-transform intermediate itself.
+
+### Can the generator avoid the giant intermediate? (refactor attempt — no)
+
+The natural next idea is to change the *generated factorization* so the DF half-transform never
+forms the `(μ̃,Κ)`-both-outer, tiny-per-pair-cell intermediate `I_ap2_μ̃_Κ[i,i,μ̃,Κ;a]`
+(`src/generated_t2_residual.cpp:487`). A read of the SeQuant generator settles it:
+
+- **`(μ̃,Κ)`-inner is structurally impossible.** The ToT outer/inner split is a hard function of
+  `Index::has_proto_indices()` — inner ⇔ proto-decorated (per-pair PNO domain) — in both the
+  emitter (`SeQuant/core/export/tiledarray_generator.hpp:575-576`) and the cost model
+  (`SeQuant/core/utility/indices.hpp:405-406`). The PNO index `a` is per-pair (proto ⇒ inner);
+  μ̃ (PAO) and Κ (DF aux) are **global, non-proto** (`domain/mbpt/rules/df.cpp:18-63`;
+  `csv.cpp:31` even asserts aux is never proto) ⇒ they are forced **outer**. No optimize option
+  or extent value can move a non-proto axis into the per-pair inner cell.
+- **No correctness-safe optimizer setting reduces the intermediate — they all make it worse.**
+  Measured on the regenerated R2, count of `(μ̃,Κ)`-both-outer tiny-cell intermediates:
+  `OptFor::Flops` (shipped) **2**; `OptFor::Memsize` **3**; `Flops`+`SPTC_NO_CSE=1` **4** (so
+  cross-term CSE actually *merges/reduces* them). The Flops cost model
+  (`SeQuant/core/optimize/single_term.hpp:54-56`) has no per-cell/block-overhead term, but adding
+  memory pressure (`Memsize`) steers *toward* more small-inner ToT intermediates, not away. The
+  `SPTC_OPT_MEMSIZE` knob added to the generator's derivation test documents this (kept, gated,
+  `OptFor::Flops` stays default).
+- **The one setting that removes them is the already-rejected one.** A large proto extent
+  (`SPTC_PROTO_EXTENT=100`) drops the count to **0**, but it does so by swapping in a more-expensive
+  μ̃-family factorization that is *slower* with owning-ToT and numerically divergent at cc-pVTZ
+  (`MPQC_COMPARISON.md` §11 / campaign memory). There is no free lunch: the `(μ̃,Κ)`-outer
+  tiny-cell half-transform *is* the flops-optimal factorization for this DF+CSV algebra.
+
+**Conclusion.** The cold gap is not closable at the generator level. It is a genuine TiledArray
+flat×ToT `einsum` efficiency limit for the DF half-transform, and the only real remedies are (i) a
+**TA backend improvement** to the flat×ToT contraction's per-cell overhead, or (ii) a
+**derivation-level** change that gives the PAO index μ̃ a per-pair (proto) domain so the
+half-transform becomes a per-pair quantity (a method change to the DF/CSV rules, not a generator
+knob), or (iii) aux-Κ batching to bound *memory* (lever b — it does not address per-cell speed).
 
 ---
 
@@ -378,10 +409,14 @@ evaluation approach"):
   `SPTC_CYCLIC_PMAP` (`maybe_cyclic_pmap`, `ta_builder.h`) balances the input arrays
   (checksum-invariant, 0 idle ranks) but does **not** speed up cold np=16 (48.9 s → 49.9 s; §
   verification above) — TA re-maps operands into its own SUMMA layout, so the input pmap doesn't
-  govern the contraction. The genuine cold lever is narrower: the ToT `einsum`'s per-outer-cell
-  cost for the giant DF half-transform (~87 % of cold T2, ~100× off peak), fixable only by a
-  **representation change** — a SeQuant factorization making (μ̃,Κ) the ToT *inner* index (few
-  large cells, not ~4 M tiny per-pair cells) — or a TA backend improvement, not a pmap/tiling knob.
+  govern the contraction. The genuine cold cost is the ToT `einsum`'s per-outer-cell overhead for
+  the giant DF half-transform (~87 % of cold T2, ~100× off peak). A **generator refactor was also
+  tried and refuted** (§8): `(μ̃,Κ)`-inner is structurally impossible (inner ⇔ proto; μ̃,Κ are
+  non-proto/global), and no correctness-safe optimizer setting reduces the tiny-cell intermediate
+  (`OptFor::Memsize` and `NO_CSE` produce *more*; only proto=100 removes it, at the cost of a
+  slower, divergent μ̃-family factorization). So this is **not** an in-repo lever: it needs a TA
+  backend fix to flat×ToT contraction, or a derivation-level change giving μ̃ a per-pair proto
+  domain — a method change, not a generator/tiling/pmap knob.
 - **(b) Hexane memory wall → port aux-Κ batching.** Stream Κ in tile-aligned slices over the
   *persistent* DF terms, sum partials, scale the sparse threshold by 1/`n_batches`
   (`eval.hpp:1129`, `cck.ipp:1601-1645`). Bigger, needs the sliced-trange SUMMA path (already
