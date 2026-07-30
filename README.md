@@ -44,6 +44,10 @@ not tiling or pmap — both empirically ruled out).
 - `docs/MPQC_COMPARISON.md` — the performance-parity writeup.
 - `docs/MPQC_EVALUATION.md` — end-to-end trace of MPQC's CSV-CCSD residual
   evaluation + "how to match it" assessment (the cold-gap lever analysis).
+- `docs/CONTRACTION_IR.md` — CTIR, a human-readable Contraction IR that shows
+  what the einsum C++ hides (per-cell cost / CELL-BOUND, t-indep vs t-dep +
+  persistent, aux-Κ batchability) and why the einsum can't describe MPQC's
+  runtime computation. Samples in `docs/scaling-campaign-data/*.ctir`.
 - `tools/` — optional diagnostics/benchmarks (off by default; see
   `tools/README.md`).
 

@@ -1,0 +1,519 @@
+ctir v1  whole_t1_residual   (CSV-CCSD closed-shell, DF+CSV)
+; one shared DAG (post-CSE). `uses=N` = # consumers (cross-term sharing MPQC caches with min_repeats=2).
+; ToT tensors print as [outer ; inner]<pair-key>; inner = per-pair PNO domain.
+; cost: cells = # outer ToT cells (= # independent tasks); CELL-BOUND flags the DF-half-transform pathology.
+; t-indep = amplitude-independent (build-once candidate); persistent = t-indep feeding a t-dep op (MPQC reuses across iters).
+
+leaves:
+  C_ap1_μ̃  [μ̃_19579 ; a_1]⟨i_1⟩  tot  t-indep
+  C_μ̃_ap1  [μ̃_19580 ; a_2]⟨i_2⟩  tot  t-indep
+  f_i_i  [i_2 i_1]  flat  t-indep
+  f_i_μ̃  [i_2 μ̃_19630]  flat  t-indep
+  f_μ̃_i  [μ̃_19633 i_1]  flat  t-indep
+  f_μ̃_μ̃  [μ̃_19617 μ̃_19618]  flat  t-indep
+  g_i_i_Κ  [i_2 i_1 Κ_1]  flat  t-indep
+  g_i_μ̃_Κ  [i_2 μ̃_19581 Κ_1]  flat  t-indep
+  g_μ̃_i_Κ  [μ̃_19582 i_1 Κ_1]  flat  t-indep
+  g_μ̃_μ̃_Κ  [μ̃_19587 μ̃_19588 Κ_1]  flat  t-indep
+  s_μ̃_μ̃  [μ̃_19579 μ̃_19580]  flat  t-indep
+  t_ap1_i  [i_2 ; a_2]  tot  t-dep(amplitude)
+  t_ap2_ap2_i_i  [i_3 i_1 ; a_3 a_4]  tot  t-dep(amplitude)
+
+computation:
+  def CSE1_i_μ̃ [i_2 μ̃_19580] flat  uses=8  t-dep
+      = contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def I2_i_μ̃ [i_1 μ̃_19580] flat  uses=14  t-dep
+      = contract{i_2} f_i_i * CSE1_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19579] flat  uses=32  t-dep
+      = contract{μ̃_19580} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      = -1 contract{μ̃_19579} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_2 μ̃_19581] flat  uses=32  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def CSE2_Κ [Κ_1] flat  uses=3  t-dep
+      = contract{i_2 μ̃_19581} I_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=282  inner=1  flops=2.3e+05  per-cell=798
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19582] flat  uses=32  t-dep
+      += contract{Κ_1} CSE2_Κ * g_μ̃_i_Κ
+      cost: cells=798  inner=1  flops=2.3e+05  per-cell=282   · batchable/Κ_1 (aux)
+    free CSE2_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += 2 contract{μ̃_19582} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_μ̃_μ̃ [μ̃_19587 μ̃_19588] flat  uses=1  t-dep
+      = contract{Κ_1} CSE2_Κ * g_μ̃_μ̃_Κ
+      cost: cells=12996  inner=1  flops=3.7e+06  per-cell=282   · batchable/Κ_1 (aux)
+    free CSE2_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19587] flat  uses=32  t-dep
+      += contract{μ̃_19588} I_μ̃_μ̃ * CSE1_i_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_μ̃_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += 2 contract{μ̃_19587} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_2 μ̃_19625] flat  uses=32  t-dep
+      += contract{a_3} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def CSE3_i_μ̃ [i_2 μ̃_19624] flat  uses=7  t-dep
+      = contract{μ̃_19625} I_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i [i_1 i_2] flat  uses=7  t-dep
+      = contract{Κ_1} g_i_i_Κ * CSE2_Κ
+      cost: cells=49  inner=1  flops=13818  per-cell=282   · batchable/Κ_1 (aux)
+    free CSE2_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19624] flat  uses=32  t-dep
+      += contract{i_2} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19624} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_2 μ̃_19626] flat  uses=14  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def I_Κ [Κ_1] flat  uses=2  t-dep
+      = contract{i_2 μ̃_19626} I2_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=282  inner=1  flops=2.3e+05  per-cell=798
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_3 μ̃_19627] flat  uses=32  t-dep
+      += contract{Κ_1} I_Κ * g_i_μ̃_Κ
+      cost: cells=798  inner=1  flops=2.3e+05  per-cell=282   · batchable/Κ_1 (aux)
+    free I_Κ        ; repro: release slot (static ref-count liveness)
+  def CSE4_i_i_ap2 [i_1 i_3 ; a_3] tot  uses=2  t-dep
+      = contract{μ̃_19627} I_i_μ̃ * C_μ̃_ap2
+      cost: cells=49  inner=45  flops=2.5e+05  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_3⟩ tot  uses=10  t-dep
+      = contract{i_3 a_3} CSE4_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE4_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19629] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19628] flat  uses=32  t-dep
+      += contract{μ̃_19629} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += 4 contract{μ̃_19628} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_2 μ̃_19642] flat  uses=32  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def I_Κ [Κ_1] flat  uses=2  t-dep
+      += contract{i_2 μ̃_19642} I_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=282  inner=1  flops=2.3e+05  per-cell=798
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def CSE5_i_μ̃ [i_3 μ̃_19643] flat  uses=1  t-dep
+      = contract{Κ_1} I_Κ * g_i_μ̃_Κ
+      cost: cells=798  inner=1  flops=2.3e+05  per-cell=282   · batchable/Κ_1 (aux)
+    free I_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_i [i_1 i_3] flat  uses=7  t-dep
+      += contract{μ̃_19643} CSE5_i_μ̃ * CSE1_i_μ̃
+      cost: cells=49  inner=1  flops=5586  per-cell=114
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free CSE5_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19644] flat  uses=32  t-dep
+      += contract{i_3} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19644} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_3⟩ tot  uses=10  t-dep
+      += contract{i_3 a_3} CSE4_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE4_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19656] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19655] flat  uses=32  t-dep
+      += contract{μ̃_19656} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19655} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19583] flat  uses=32  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def CSE6_i_i_Κ [i_2 i_1 Κ_1] flat  uses=2  t-dep
+      = contract{μ̃_19583} I_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=13818  inner=1  flops=1.6e+06  per-cell=114
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃_Κ [i_2 μ̃_19584 Κ_1] flat  uses=3  t-dep
+      = contract{μ̃_19585} g_μ̃_μ̃_Κ * CSE1_i_μ̃
+      cost: cells=2.3e+05  inner=1  flops=2.6e+07  per-cell=114
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19584] flat  uses=32  t-dep
+      += contract{i_2 Κ_1} I_i_μ̃_Κ * CSE6_i_i_Κ
+      cost: cells=798  inner=1  flops=1.6e+06  per-cell=1974   · batchable/Κ_1 (aux)
+    free CSE6_i_i_Κ        ; repro: release slot (static ref-count liveness)
+    free I_i_μ̃_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -1 contract{μ̃_19584} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19592] flat  uses=32  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def I_i_i_Κ [i_1 i_2 Κ_1] flat  uses=2  t-dep
+      = contract{μ̃_19592} I_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=13818  inner=1  flops=1.6e+06  per-cell=114
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap2_Κ [i_3 Κ_1 ; a_3]⟨i_2⟩ tot  uses=1  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19593} g_i_μ̃_Κ * C_μ̃_ap2
+      cost: cells=13818  inner=45  flops=7.1e+07  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+  def CSE7_i_i_i_ap2 [i_3 i_2 i_1 ; a_3] tot  uses=2  t-dep
+      = contract{Κ_1} I_i_i_Κ * I_i_ap2_Κ
+      cost: cells=343  inner=45  flops=4.4e+06  per-cell=12690   · batchable/Κ_1 (aux)
+    free I_i_ap2_Κ        ; repro: release slot (static ref-count liveness)
+    free I_i_i_Κ        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_2 i_3⟩ tot  uses=10  t-dep
+      += contract{i_3 i_2 a_3} CSE7_i_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=343  inner=45  flops=6.9e+05  per-cell=2025
+    free CSE7_i_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19595] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19594] flat  uses=32  t-dep
+      += contract{μ̃_19595} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19594} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def CSE8_i_i_ap2_Κ [i_1 i_2 Κ_1 ; a_2] tot  uses=2  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19614} g_i_μ̃_Κ * C_μ̃_ap2
+      cost: cells=13818  inner=45  flops=7.1e+07  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+  def CSE9_i_i_ap2_μ̃ [i_1 i_2 μ̃_19616 ; a_2] tot  uses=2  t-dep
+      = contract{a_3} C_μ̃_ap2 * t_ap2_ap2_i_i
+      cost: cells=5586  inner=45  flops=1.1e+07  per-cell=2025
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃_Κ [i_1 μ̃_19616 Κ_1] flat  uses=3  t-dep
+      += contract{i_2 a_2} CSE8_i_i_ap2_Κ * CSE9_i_i_ap2_μ̃
+      cost: cells=2.3e+05  inner=1  flops=7.1e+07  per-cell=315
+    free CSE9_i_i_ap2_μ̃        ; repro: release slot (static ref-count liveness)
+    free CSE8_i_i_ap2_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19615] flat  uses=32  t-dep
+      += contract{μ̃_19616 Κ_1} I_i_μ̃_Κ * g_μ̃_μ̃_Κ
+      cost: cells=798  inner=1  flops=2.6e+07  per-cell=32148   · batchable/Κ_1 (aux)
+    free I_i_μ̃_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += 2 contract{μ̃_19615} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃_Κ [i_1 μ̃_19648 Κ_1] flat  uses=3  t-dep
+      += contract{i_2 a_2} CSE8_i_i_ap2_Κ * CSE9_i_i_ap2_μ̃
+      cost: cells=2.3e+05  inner=1  flops=7.1e+07  per-cell=315
+    free CSE9_i_i_ap2_μ̃        ; repro: release slot (static ref-count liveness)
+    free CSE8_i_i_ap2_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19647] flat  uses=32  t-dep
+      += contract{μ̃_19648 Κ_1} I_i_μ̃_Κ * g_μ̃_μ̃_Κ
+      cost: cells=798  inner=1  flops=2.6e+07  per-cell=32148   · batchable/Κ_1 (aux)
+    free I_i_μ̃_Κ        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -1 contract{μ̃_19647} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_2 i_3⟩ tot  uses=10  t-dep
+      += contract{i_3 i_2 a_3} CSE7_i_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=343  inner=45  flops=6.9e+05  per-cell=2025
+    free CSE7_i_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19641] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19640] flat  uses=32  t-dep
+      += contract{μ̃_19641} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19640} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_3 μ̃_19619] flat  uses=14  t-dep
+      += contract{i_2 Κ_1} g_i_μ̃_Κ * CSE6_i_i_Κ
+      cost: cells=798  inner=1  flops=1.6e+06  per-cell=1974   · batchable/Κ_1 (aux)
+    free CSE6_i_i_Κ        ; repro: release slot (static ref-count liveness)
+  def I_i_i [i_1 i_3] flat  uses=7  t-dep
+      += contract{μ̃_19619} I2_i_μ̃ * CSE1_i_μ̃
+      cost: cells=49  inner=1  flops=5586  per-cell=114
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19621] flat  uses=32  t-dep
+      += contract{i_3} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19621} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_3 μ̃_19634] flat  uses=14  t-dep
+      += contract{a_2} C_μ̃_ap1 * t_ap1_i
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+  def I_i_i_Κ [i_2 i_3 Κ_1] flat  uses=2  t-dep
+      += contract{μ̃_19634} I2_i_μ̃ * g_i_μ̃_Κ
+      cost: cells=13818  inner=1  flops=1.6e+06  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_2 μ̃_19635] flat  uses=32  t-dep
+      += contract{i_3 Κ_1} I_i_i_Κ * g_i_μ̃_Κ
+      cost: cells=798  inner=1  flops=1.6e+06  per-cell=1974   · batchable/Κ_1 (aux)
+    free I_i_i_Κ        ; repro: release slot (static ref-count liveness)
+  def CSE10_i_i_ap2 [i_1 i_2 ; a_3] tot  uses=2  t-dep
+      = contract{μ̃_19635} I_i_μ̃ * C_μ̃_ap2
+      cost: cells=49  inner=45  flops=2.5e+05  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_2⟩ tot  uses=10  t-dep
+      += contract{i_2 a_3} CSE10_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE10_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19637] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19636] flat  uses=32  t-dep
+      += contract{μ̃_19637} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19636} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_4]⟨i_2⟩ tot  uses=10  t-dep
+      += contract{i_2 a_3} CSE10_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE10_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19660] flat  uses=14  t-dep
+      += contract{a_4} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19659] flat  uses=32  t-dep
+      += contract{μ̃_19660} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19659} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def CSE11_i_i_μ̃_μ̃ [i_3 i_2 μ̃_19597 μ̃_19596] flat  uses=2  t-indep
+      = contract{Κ_1} g_i_μ̃_Κ * g_i_μ̃_Κ
+      cost: cells=6.4e+05  inner=1  flops=1.8e+08  per-cell=282   · batchable/Κ_1 (aux)
+  def I_i_i_ap2_μ̃ [i_2 i_3 μ̃_19597 ; a_2]⟨i_1⟩ tot  uses=2  t-indep
+      = contract{μ̃_19596} CSE11_i_i_μ̃_μ̃ * C_μ̃_ap2
+      cost: cells=39102  inner=45  flops=2.0e+08  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free CSE11_i_i_μ̃_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i_ap2_ap2 [i_2 i_3 ; a_2 a_3]⟨i_1⟩ tot  uses=2  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19597} I_i_i_ap2_μ̃ * C_μ̃_ap2
+      cost: cells=343  inner=2025  flops=7.9e+07  per-cell=2.3e+05
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I_i_i_ap2_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i [i_1 i_3] flat  uses=7  t-dep
+      += contract{i_2 a_2 a_3} I_i_i_ap2_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=1  flops=6.9e+05  per-cell=14175
+    free I_i_i_ap2_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19598] flat  uses=32  t-dep
+      += contract{i_3} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19598} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i_ap2_μ̃ [i_2 i_3 μ̃_19650 ; a_2]⟨i_1⟩ tot  uses=2  t-indep
+      += contract{μ̃_19649} CSE11_i_i_μ̃_μ̃ * C_μ̃_ap2
+      cost: cells=39102  inner=45  flops=2.0e+08  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free CSE11_i_i_μ̃_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i_ap2_ap2 [i_2 i_3 ; a_2 a_3]⟨i_1⟩ tot  uses=2  t-indep  [persistent: build-once, reused across iters]
+      += contract{μ̃_19650} I_i_i_ap2_μ̃ * C_μ̃_ap2
+      cost: cells=343  inner=2025  flops=7.9e+07  per-cell=2.3e+05
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I_i_i_ap2_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i [i_1 i_2] flat  uses=7  t-dep
+      += contract{i_3 a_2 a_3} I_i_i_ap2_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=1  flops=6.9e+05  per-cell=14175
+    free I_i_i_ap2_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19651] flat  uses=32  t-dep
+      += contract{i_2} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19651} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def CSE12_i_i_i_μ̃ [i_2 i_3 i_1 μ̃_19608] flat  uses=1  t-indep  [persistent: build-once, reused across iters]
+      = contract{Κ_1} g_i_i_Κ * g_i_μ̃_Κ
+      cost: cells=39102  inner=1  flops=1.1e+07  per-cell=282   · batchable/Κ_1 (aux)
+  def I_i_i [i_1 i_3] flat  uses=7  t-dep
+      += contract{i_2 μ̃_19608} CSE12_i_i_i_μ̃ * CSE1_i_μ̃
+      cost: cells=49  inner=1  flops=39102  per-cell=798
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free CSE12_i_i_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19609] flat  uses=32  t-dep
+      += contract{i_3} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19609} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap1 [i_2 ; a_2]⟨i_1⟩ tot  uses=1  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19630} f_i_μ̃ * C_μ̃_ap1
+      cost: cells=49  inner=45  flops=2.5e+05  per-cell=5130
+  def I_i_i [i_1 i_2] flat  uses=7  t-dep
+      += contract{a_2} I2_i_ap1 * t_ap1_i
+      cost: cells=49  inner=1  flops=2205  per-cell=45
+    free I2_i_ap1        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19631] flat  uses=32  t-dep
+      += contract{i_2} I_i_i * CSE3_i_μ̃
+      cost: cells=798  inner=1  flops=5586  per-cell=7
+    free CSE3_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -1 contract{μ̃_19631} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i_μ̃_μ̃ [i_1 i_2 μ̃_19606 μ̃_19607] flat  uses=1  t-indep  [persistent: build-once, reused across iters]
+      = contract{Κ_1} g_i_i_Κ * g_μ̃_μ̃_Κ
+      cost: cells=6.4e+05  inner=1  flops=1.8e+08  per-cell=282   · batchable/Κ_1 (aux)
+  def I_i_μ̃ [i_1 μ̃_19606] flat  uses=32  t-dep
+      += contract{i_2 μ̃_19607} I_i_i_μ̃_μ̃ * CSE1_i_μ̃
+      cost: cells=798  inner=1  flops=6.4e+05  per-cell=798
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+    free I_i_i_μ̃_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -1 contract{μ̃_19606} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19617] flat  uses=32  t-dep
+      += contract{μ̃_19618} f_μ̃_μ̃ * CSE1_i_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free CSE1_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19617} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_i_i_μ̃ [i_1 i_2 i_3 μ̃_19589] flat  uses=1  t-indep
+      = contract{Κ_1} g_i_i_Κ * g_i_μ̃_Κ
+      cost: cells=39102  inner=1  flops=1.1e+07  per-cell=282   · batchable/Κ_1 (aux)
+  def CSE13_i_i_i_ap2 [i_3 i_2 i_1 ; a_2] tot  uses=2  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19589} I_i_i_i_μ̃ * C_μ̃_ap2
+      cost: cells=343  inner=45  flops=1.8e+06  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I_i_i_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_3]⟨i_2 i_3⟩ tot  uses=10  t-dep
+      += contract{i_3 i_2 a_2} CSE13_i_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=343  inner=45  flops=6.9e+05  per-cell=2025
+    free CSE13_i_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19591] flat  uses=14  t-dep
+      += contract{a_3} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19590] flat  uses=32  t-dep
+      += contract{μ̃_19591} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -2 contract{μ̃_19590} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_3]⟨i_2 i_3⟩ tot  uses=10  t-dep
+      += contract{i_3 i_2 a_2} CSE13_i_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=343  inner=45  flops=6.9e+05  per-cell=2025
+    free CSE13_i_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19613] flat  uses=14  t-dep
+      += contract{a_3} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19612] flat  uses=32  t-dep
+      += contract{μ̃_19613} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += contract{μ̃_19612} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def CSE14_i_i_ap2 [i_1 i_2 ; a_2] tot  uses=2  t-indep  [persistent: build-once, reused across iters]
+      = contract{μ̃_19600} f_i_μ̃ * C_μ̃_ap2
+      cost: cells=49  inner=45  flops=2.5e+05  per-cell=5130
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_3]⟨i_2⟩ tot  uses=10  t-dep
+      += contract{i_2 a_2} CSE14_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE14_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19602] flat  uses=14  t-dep
+      += contract{a_3} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19601] flat  uses=32  t-dep
+      += contract{μ̃_19602} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += -1 contract{μ̃_19601} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  def I2_i_ap2 [i_1 ; a_3]⟨i_2⟩ tot  uses=10  t-dep
+      += contract{i_2 a_2} CSE14_i_i_ap2 * t_ap2_ap2_i_i
+      cost: cells=49  inner=45  flops=99225  per-cell=2025
+    free CSE14_i_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I2_i_μ̃ [i_1 μ̃_19605] flat  uses=14  t-dep
+      += contract{a_3} I2_i_ap2 * C_μ̃_ap2
+      cost: cells=798  inner=1  flops=35910  per-cell=45
+    free C_μ̃_ap2        ; repro: release slot (static ref-count liveness)
+    free I2_i_ap2        ; repro: release slot (static ref-count liveness)
+  def I_i_μ̃ [i_1 μ̃_19604] flat  uses=32  t-dep
+      += contract{μ̃_19605} I2_i_μ̃ * s_μ̃_μ̃
+      cost: cells=798  inner=1  flops=90972  per-cell=114
+    free I2_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-dep
+      += 2 contract{μ̃_19604} I_i_μ̃ * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+    free I_i_μ̃        ; repro: release slot (static ref-count liveness)
+  result I_i_ap1 [i_1 ; a_1] tot  uses=0  t-indep
+      += contract{μ̃_19633} f_μ̃_i * C_ap1_μ̃
+      cost: cells=7  inner=45  flops=35910  per-cell=5130
+
+; totals: 119 contraction steps, 13 leaves.

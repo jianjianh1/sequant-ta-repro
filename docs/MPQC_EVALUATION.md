@@ -431,3 +431,9 @@ evaluation approach"):
 equal-rank gap is not "MPQC skips work the repro does" — it is **how the identical DF
 contraction is tiled and distributed** (a, in-repo) and, for hexane, **whether the intermediate
 is streamed** (b, opt-in). Lever (c)'s residual is the one genuinely-structural piece.
+
+> Much of the analysis above (the CELL-BOUND DF half-transform, the `t-indep`/`t-dep` split, the
+> persistent build-once intermediates, aux-Κ batchability) is exactly what a static `TA::einsum`
+> call list *cannot* show. `docs/CONTRACTION_IR.md` defines **CTIR**, a human-readable Contraction
+> IR whose emitter annotates each contraction with these facts at generation time — see it for the
+> `I_ap2_μ̃_Κ` node rendered with its `⚠ CELL-BOUND (1.6e6 tiny ToT tasks)` / `t-indep` flags.
