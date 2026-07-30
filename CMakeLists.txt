@@ -62,6 +62,17 @@ if(tiledarray_FOUND)
         target_include_directories(ta_warm_t2
             PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools/gen_split")
     endif()
+
+    if(SPTC_BUILD_TOOLS AND EXISTS "${CMAKE_SOURCE_DIR}/tools/gap_microbench.cpp")
+        # Achievable-speedup ceiling for the cold CSE37 hotspot: TA::einsum
+        # (L487-488) vs hand-written per-pair BLAS GEMM on identical data.
+        # See tools/gap_microbench.cpp. Owning-ToT (single-node, thread-safe).
+        add_executable(gap_microbench tools/gap_microbench.cpp)
+        target_link_libraries(gap_microbench PRIVATE tiledarray)
+        target_include_directories(gap_microbench
+            PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools")
+        target_compile_definitions(gap_microbench PRIVATE SPTC_OWNING_TOT)
+    endif()
 else()
     message(STATUS "TiledArray not found — run ./setup-tiledarray.sh first")
 endif()
