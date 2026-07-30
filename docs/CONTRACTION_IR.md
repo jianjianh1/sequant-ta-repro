@@ -109,8 +109,8 @@ generator knob can reshape — `MPQC_EVALUATION.md` §8). Its consumer `CSE37…
 `t-dep` boundary, so CTIR marks *it* `[persistent: built once, reused across iters]` — the exact
 `CacheManager` entry MPQC keeps alive across CC iterations. None of this is visible in the einsum.
 
-The whole-residual `summary:` block makes the split quantitative: for T2, **83 of 198 values are
-t-indep (~78 % of total flops), 46 of them persistent** — i.e. most of the residual's arithmetic is
+The whole-residual `summary:` block makes the split quantitative: for T2, **54 of 198 values are
+t-indep (~71 % of total flops), 33 of them persistent** — i.e. most of the residual's arithmetic is
 amplitude-independent work MPQC builds once and the repro's cold driver rebuilds every pass, plus
 **37 aux-Κ-batchable** contractions. That is the warm/cold and hexane-memory story (`MPQC_EVALUATION.md`
 §6/§10) in three lines the einsum cannot express.

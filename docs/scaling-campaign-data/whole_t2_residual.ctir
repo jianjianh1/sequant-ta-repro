@@ -48,7 +48,7 @@ computation:
           -4 contract{l a''''} I2_i_i_ap2_ap2 * CSE7_i_i_i_ap2_ap2
           -2 contract{l a''''} I2_i_i_ap2_ap2 * CSE7_i_i_i_ap2_ap2
           contract{μ̃} I_i_i_ap2_μ̃ * C_μ̃_ap2
-      cost: cells=49  inner=2025  flops=1.1e+08  per-cell=2.2e+06
+      cost: cells=49  inner=2025  flops=6.5e+08  per-cell=1.3e+07
     free I_ap2_ap2        ; repro: release slot after last use (static liveness)
     free I2_i_i_ap2_ap2        ; repro: release slot after last use (static liveness)
     free I_i_i_i_ap2        ; repro: release slot after last use (static liveness)
@@ -502,8 +502,8 @@ computation:
       cost: cells=5586  inner=45  flops=1.1e+07  per-cell=2025
     free I_i_i_ap2_μ̃#18        ; repro: release slot after last use (static liveness)
   def I2_μ̃_μ̃ [μ̃ μ̃'] flat  uses=1  t-dep
-      = contract{a} I2_ap2_μ̃ * C_μ̃_ap2
-      cost: cells=12996  inner=1  flops=5.8e+05  per-cell=45
+      = contract{a i j} I2_ap2_μ̃ * C_μ̃_ap2
+      cost: cells=12996  inner=1  flops=2.9e+07  per-cell=2205
     free I2_ap2_μ̃        ; repro: release slot after last use (static liveness)
   def I_μ̃_μ̃#2 [μ̃ μ̃'] flat  uses=1  t-dep
       = contract{μ̃''} I2_μ̃_μ̃ * s_μ̃_μ̃
@@ -526,8 +526,8 @@ computation:
       cost: cells=5586  inner=45  flops=1.1e+07  per-cell=2025
     free I_i_i_ap2_μ̃#19        ; repro: release slot after last use (static liveness)
   def I2_μ̃_μ̃#2 [μ̃ μ̃'] flat  uses=1  t-dep
-      = contract{a} I2_ap2_μ̃ * C_μ̃_ap2
-      cost: cells=12996  inner=1  flops=5.8e+05  per-cell=45
+      = contract{a i j} I2_ap2_μ̃ * C_μ̃_ap2
+      cost: cells=12996  inner=1  flops=2.9e+07  per-cell=2205
     free I2_ap2_μ̃#2        ; repro: release slot after last use (static liveness)
   def I_μ̃_μ̃#3 [μ̃ μ̃'] flat  uses=1  t-dep
       = contract{μ̃''} I2_μ̃_μ̃ * s_μ̃_μ̃
@@ -872,5 +872,5 @@ computation:
 
 summary:
   198 values (54 t-indep / 144 t-dep), 13 input leaves.
-  t-indep (cold precompute) ≈ 1.9e+10 flops of 2.6e+10 total (73%): MPQC builds these once (33 persistent); the repro's cold driver rebuilds them every residual pass.
+  t-indep (cold precompute) ≈ 1.9e+10 flops of 2.6e+10 total (71%): MPQC builds these once (33 persistent); the repro's cold driver rebuilds them every residual pass.
   1 CELL-BOUND node(s) (the DF half-transform tiny-cell hotspot); 37 aux-Κ-batchable.
