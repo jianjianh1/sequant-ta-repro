@@ -41,32 +41,41 @@ un-shared, and cost-free. CTIR is the missing view: one shared DAG with cost and
 
 ## What CTIR shows
 
-CTIR renders the **whole-residual, post-CSE DAG** — the same forest the einsum backend consumes,
-so cross-term sharing appears directly as `uses=N`. Grammar (informal):
+CTIR renders the whole-residual computation as a **value DAG**: the export framework hands the
+emitter an imperative stream that *reuses* C++ slot names across live ranges, and CTIR recovers one
+`def` per computed **value** (a slot reused after a `free` becomes a new versioned value `name#2`;
+an accumulated value — the residual, or an intermediate built by `+=` — stays *one* value rendered
+as `= Σ`). Cross-term sharing then shows directly as `uses=N`. Grammar (informal):
 
 ```
+spaces:  i=<n>  μ̃=<n>  Κ=<n>  a=PNO⟨per-pair⟩~<n>
 leaves:
   <name>  [<outer> ; <inner>]⟨<pair-key>⟩  {tot|flat}  {t-indep | t-dep(amplitude)}
 computation:
-  def <name> [<outer> ; <inner>]⟨<pair-key>⟩ {tot|flat}  uses=N  {t-indep|t-dep}  [persistent: …]
-      {= | +=} [<scalar>] {contract{<summed idxs>} | copy} <operand> * <operand>
+  {def|result} <value-id> [<outer> ; <inner>]⟨<pair-key>⟩ {tot|flat}  uses=N  {t-indep|t-dep}  [persistent: …]
+      = [<scalar>] {contract{<summed idxs>} | copy} <operand> * <operand>      (single contribution)
+      = Σ <k> contributions:                                                    (accumulated value)
+          <scalar> contract{…} <op> * <op>
+          …
       cost: cells=<#outer ToT cells>  inner=<per-pair extent>  flops=<…>  per-cell=<…>
-            [⚠ CELL-BOUND (<n> tiny ToT tasks)]  [· batchable/<axis> (aux)]
-    free <name>        ; repro: release slot (static ref-count liveness)
-  result R2 = …
+            [⚠ CELL-BOUND (<n> tiny ToT tasks)]  [· batchable/Κ (aux)]
+    free <value-id>        ; repro: release slot after last use (static liveness)
+summary:  <#values> (t-indep/t-dep)  ·  cold-precompute flops share  ·  #persistent  ·  #batchable
 ```
 
-Every annotation is derived from the real code, not guessed:
+Index names are canonicalized per value (SeQuant's internal numeric tags stripped; same-space
+indices disambiguated — occ as `i j k …`, others primed as `μ̃ μ̃'`). Every annotation is derived
+from the real code, not guessed:
 
 | annotation | meaning | source |
 |---|---|---|
 | `[outer ; inner]⟨pair-key⟩` | ToT block-sparse outer vs per-pair PNO inner; `⟨…⟩` = the occupied pair keying the PNO domain | `classify_indices`/`tot_indices` (`utility/indices.hpp`) |
-| `uses=N` | # consumers on the shared DAG; `N≥2` = a cross-term shared node (what MPQC caches with `min_repeats=2`) | export ref-count (`export.hpp`) |
-| `cells` / `⚠ CELL-BOUND` | # outer ToT cells = # independent per-cell tasks; flagged when ≥1e6 (the DF-half-transform tiny-cell pathology) | product of outer + pair-key extents (via `idx_to_extent`) |
-| `t-indep` / `t-dep` | amplitude-independent (build-once candidate — the "cold precompute") vs amplitude-dependent (rebuilt each iteration — the "warm" work). `t-dep` iff it transitively contracts a `t` leaf | `label == "t"` volatility, matching MPQC's `is_volatile` predicate (`cck.ipp:1640`) |
-| `[persistent: build-once, reused across iters]` | a `t-indep` node consumed by a `t-dep` node — MPQC's `CacheManager` builds it once and it survives `reset()` across CC iterations | `cache_manager.hpp` rule (V→NP, NV-with-V-consumer→P) |
+| `uses=N` | # consumers of this **value** on the DAG; `N≥2` = a cross-term shared node (what MPQC caches with `min_repeats=2`) | whole-DAG operand count |
+| `cells` / `⚠ CELL-BOUND` | # outer ToT cells = # independent per-cell tasks; flagged for the dominant-cell-count ToT node(s) (relative, so it travels across problem sizes) | product of outer + pair-key extents (via `idx_to_extent`) |
+| `t-indep` / `t-dep` | amplitude-independent (build-once candidate — the "cold precompute") vs amplitude-dependent (rebuilt each iteration — the "warm" work). Resolved by a **whole-DAG volatility fixpoint**: t-dep iff it or any operand transitively contracts a `t` leaf | `label == "t"` volatility, matching MPQC's `is_volatile` predicate (`cck.ipp:1640`) |
+| `[persistent: built once, reused across iters]` | a `t-indep` value consumed by a `t-dep` value — MPQC's `CacheManager` builds it once and it survives `reset()` across CC iterations | `cache_manager.hpp` rule (V→NP, NV-with-V-consumer→P) |
 | `· batchable/Κ (aux)` | the contraction sums over the DF aux index, so it can be streamed in Κ-slices to bound memory | the aux-Κ batching hook (`make_batched_custom_evaluator`, `cck.ipp:1601-1645`) |
-| `free …` | the repro's *static* release point (ref-count last-use) — contrast with the runtime cache lifetime above | `unload()` (`tiledarray_generator.hpp:290`) |
+| `free …` | the repro's *static* release point (whole-DAG last-use) — contrast with MPQC's cross-iteration cache lifetime above | export ref-count liveness |
 
 ## Worked example — the giant DF half-transform
 
@@ -83,9 +92,11 @@ I_ap2_μ̃_Κ("i_1,i_2,μ̃_19906,Κ_1;a_1") =
 this repo had to discover the hard way:
 
 ```
-def I_ap2_μ̃_Κ [μ̃_19906 Κ_1 ; a_1]⟨i_1 i_2⟩ tot  uses=1  t-indep
-    = contract{μ̃_19905} g_μ̃_μ̃_Κ * C_ap2_μ̃
+def I_ap2_μ̃_Κ [μ̃ Κ ; a]⟨i j⟩ tot  uses=1  t-indep
+    = contract{μ̃'} g_μ̃_μ̃_Κ * C_ap2_μ̃
     cost: cells=1.6e+06  inner=45  flops=8.1e+09  per-cell=5130   ⚠ CELL-BOUND (1.6e+06 tiny ToT tasks)
+def CSE37_i_i_ap2_ap2_Κ [i j Κ ; a a'] tot  uses=1  t-indep  [persistent: built once, reused across iters]
+    = contract{μ̃} I_ap2_μ̃_Κ * C_μ̃_ap2
 ```
 
 Read off directly: it is **t-indep** (amplitude-independent → MPQC builds it once, not every
@@ -95,8 +106,14 @@ iteration; the repro's cold driver rebuilds it every pass — the warm/cold gap 
 empirically ruled out); and it carries μ̃ and Κ as *outer* block-sparse axes with only the small
 `a` PNO domain inner (the proto structure that makes the tiny cells unavoidable, and that no
 generator knob can reshape — `MPQC_EVALUATION.md` §8). Its consumer `CSE37…` is the `t-indep`/
-`t-dep` boundary, so CTIR marks *it* `[persistent: build-once, reused across iters]` — the exact
+`t-dep` boundary, so CTIR marks *it* `[persistent: built once, reused across iters]` — the exact
 `CacheManager` entry MPQC keeps alive across CC iterations. None of this is visible in the einsum.
+
+The whole-residual `summary:` block makes the split quantitative: for T2, **83 of 198 values are
+t-indep (~78 % of total flops), 46 of them persistent** — i.e. most of the residual's arithmetic is
+amplitude-independent work MPQC builds once and the repro's cold driver rebuilds every pass, plus
+**37 aux-Κ-batchable** contractions. That is the warm/cold and hexane-memory story (`MPQC_EVALUATION.md`
+§6/§10) in three lines the einsum cannot express.
 
 Cross-term sharing is legible too: e.g. `def CSE6_i_i_i_ap2 … uses=24` and `CSE4_… uses=22` show
 single intermediates feeding 20+ downstream contractions — the reuse MPQC's runtime cache exploits
