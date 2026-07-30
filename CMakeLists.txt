@@ -36,6 +36,21 @@ if(tiledarray_FOUND)
     target_include_directories(ta_sequant_native_residual_main
         PRIVATE "${CMAKE_SOURCE_DIR}/src")
 
+    # aux-Κ-batching variant: identical driver but with the DF half-transform
+    # block gated by SPTC_AUX_TARGET_SIZE (see src/aux_k_batching.h,
+    # src/generated_t2_residual_auxbatch.cpp). SPTC_AUX_TARGET_SIZE=0 → the
+    # original einsum block (a faithful A/B against the shipped binary);
+    # >0 → Κ streamed in batches to bound the giant intermediate. Owning-ToT
+    # (multi-rank-stable, required for the hexane run) is set per-target so all
+    # its TUs agree on the ArrayToT inner-tile type.
+    add_executable(ta_auxbatch_main
+        src/ta_sequant_native_residual_main.cpp
+        src/generated_t1_residual.cpp
+        src/generated_t2_residual_auxbatch.cpp)
+    target_link_libraries(ta_auxbatch_main PRIVATE tiledarray)
+    target_include_directories(ta_auxbatch_main PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_definitions(ta_auxbatch_main PRIVATE SPTC_OWNING_TOT)
+
     if(SPTC_BUILD_TOOLS AND EXISTS "${CMAKE_SOURCE_DIR}/tools/gen_split/t2_split.cpp")
         # Warm-loop T2 benchmark: persistent cache of the t-independent
         # DF/CSV block (MPQC's volatile/persistent split), SSA-split from

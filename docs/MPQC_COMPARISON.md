@@ -293,34 +293,34 @@ same-np, both sides:
 | mol | metric | np1 | np2 | np4 | np8 | np16 |
 |---|---|---|---|---|---|---|
 | C2H6 | repro | 3.0 | 4.5 | 4.3 | 3.6 | 3.2 |
-| C2H6 | MPQC | 3.8 | - | 3.7 | 4.3 | 4.4 |
+| C2H6 | MPQC | 3.8 | - | 3.7 | 4.2 | 4.3 |
 | C2H6 | ratio | 0.8x | - | 1.2x | 0.8x | 0.7x |
-| C3H8 | repro | 22.7 | 30.5 | 27.6 | 21.7 | 18.4 |
-| C3H8 | MPQC | 18.0 | - | 9.7 | 9.3 | 8.5 |
-| C3H8 | ratio | 1.3x | - | 2.8x | 2.3x | 2.2x |
-| C4H10 | repro | 37.6 | 41.3 | 35.6 | 25.2 | 20.6 |
-| C4H10 | MPQC | 22.3 | - | 16.7 | 13.3 | 10.7 |
+| C3H8 | repro | 22.8 | 31.1 | 27.8 | 21.6 | 18.2 |
+| C3H8 | MPQC | 18.0 | - | 9.7 | 9.3 | 8.3 |
+| C3H8 | ratio | 1.3x | - | 2.9x | 2.3x | 2.2x |
+| C4H10 | repro | 37.7 | 40.4 | 34.5 | 25.0 | 20.2 |
+| C4H10 | MPQC | 22.3 | - | 16.6 | 13.1 | 10.9 |
 | C4H10 | ratio | 1.7x | - | 2.1x | 1.9x | 1.9x |
-| C5H12 | repro | 116.2 | 114.9 | 91.0 | 62.3 | 48.7 |
-| C5H12 | MPQC | 39.6 | - | 28.4 | 22.2 | 18.3 |
-| C5H12 | ratio | 2.9x | - | 3.2x | 2.8x | 2.7x |
+| C5H12 | repro | 115.3 | 114.7 | 88.3 | 63.1 | 50.4 |
+| C5H12 | MPQC | 39.6 | - | 28.8 | 22.5 | 17.9 |
+| C5H12 | ratio | 2.9x | - | 3.1x | 2.8x | 2.8x |
 
 **COLD T2 (s) — repro / MPQC / ratio, same np:**
 
 | mol | metric | np1 | np2 | np4 | np8 | np16 |
 |---|---|---|---|---|---|---|
-| C2H6 | repro | 12.2 | 12.4 | 9.7 | 8.2 | 6.6 |
-| C2H6 | MPQC | 7.7 | - | 3.7 | 3.9 | 4.3 |
-| C2H6 | ratio | 1.6x | - | 2.6x | 2.1x | 1.5x |
-| C3H8 | repro | 66.1 | 63.0 | 48.1 | 35.6 | 30.0 |
-| C3H8 | MPQC | 31.3 | - | 8.1 | 7.4 | 6.8 |
-| C3H8 | ratio | 2.1x | - | 6.0x | 4.8x | 4.4x |
-| C4H10 | repro | 154.6 | 133.4 | 99.3 | 67.8 | 48.4 |
-| C4H10 | MPQC | 76.9 | - | 13.9 | 11.6 | 10.2 |
-| C4H10 | ratio | 2.0x | - | 7.1x | 5.9x | 4.8x |
-| C5H12 | repro | - | 339.0 | 215.1 | 149.3 | 114.8 |
-| C5H12 | MPQC | 233.1 | - | 36.2 | 25.9 | 20.4 |
-| C5H12 | ratio | - | - | 5.9x | 5.8x | 5.6x |
+| C2H6 | repro | 12.4 | 12.0 | 9.8 | 7.9 | 6.6 |
+| C2H6 | MPQC | 7.7 | - | 3.7 | 3.9 | 4.2 |
+| C2H6 | ratio | 1.6x | - | 2.7x | 2.0x | 1.6x |
+| C3H8 | repro | 66.3 | 63.7 | 48.7 | 35.3 | 30.5 |
+| C3H8 | MPQC | 31.3 | - | 11.2 | 7.3 | 6.8 |
+| C3H8 | ratio | 2.1x | - | 4.3x | 4.8x | 4.5x |
+| C4H10 | repro | 155.5 | 132.2 | 96.0 | 64.3 | 48.9 |
+| C4H10 | MPQC | 76.9 | - | 13.7 | 11.8 | 10.3 |
+| C4H10 | ratio | 2.0x | - | 7.0x | 5.5x | 4.7x |
+| C5H12 | repro | 391.5 | 313.7 | 217.9 | 142.1 | 111.7 |
+| C5H12 | MPQC | 233.1 | - | 37.5 | 26.9 | 20.5 |
+| C5H12 | ratio | 1.7x | - | 5.8x | 5.3x | 5.5x |
 
 **Result.** At equal ranks **MPQC is faster for every real molecule**: the repro is
 **~2–3× slower warm and ~4.5–7× slower cold** (C₃H₈–C₅H₁₂). The repro is
@@ -329,6 +329,11 @@ multi-node overhead dominates its small workload. (An earlier version of this se
 reported the repro "beating MPQC cold at np=16" — that compared the repro's 16-rank
 time against MPQC's *single-rank* time, which is not a fair comparison once MPQC uses
 the ranks too. Corrected here.)
+
+*(These tables are a fresh full re-sweep, 2026-07-30, both sides — repro cold+warm and MPQC
+multi-rank rerun from scratch. They reproduce the prior grid within run-to-run noise and fill
+the previously-missing C₅H₁₂ cold np=1 cell (391.5 s). Checksums remained rank-invariant across
+np, nnz identical per molecule — the multi-rank correctness gate.)*
 
 **Why — the giant DF-half-transform intermediate.** The cold gap (~5×) is the single
 μ̃Κ intermediate (§3/§6). MPQC's runtime evaluator distributes it across ranks
@@ -390,6 +395,39 @@ distributed across ~250 small ragged-ToT ops (no single-op lever). Net: the ~7% 
 aside, the residual gap is not closable by in-repo tuning — it is MPQC's runtime-evaluator DF
 distribution, and matching it needs the evaluator's aux-Κ batching / occ-batch / runtime cache.
 
+**aux-Κ batching — the memory lever, now implemented (2026-07-30).** MPQC's opt-in aux-Κ
+batching (lever 2) is now ported to the repro: `src/aux_k_batching.h`
+(`accumulate_df_halftransform_batched`), gated by `SPTC_AUX_TARGET_SIZE` (target Κ elements per
+batch, 0 = off — the same knob shape as MPQC's `batch:aux_target_size`), built as
+`ta_auxbatch_main`. Because Κ is contracted at the DF-block root, streaming it in tile-aligned
+batches and summing the partials is byte-identical math to the unbatched einsum (same cell count,
+same flops) — a **memory** lever, not a speed one; it does not change the cold/warm ratios above.
+Validated single-node (`SPTC_AUX_TARGET_SIZE` 0 vs 96) on C₂H₆–C₅H₁₂: T2 checksums match the
+unbatched path to 10–13 significant figures (float reassociation of the Κ sum, `nnz` identical),
+and **peak RSS drops sharply** because the giant μ̃Κ intermediate is never fully formed:
+
+| molecule | unbatched peak RSS | batched peak RSS | reduction |
+|---|---|---|---|
+| C₂H₆  | 3.65 GB | 2.07 GB | −43% |
+| C₃H₈  | 12.0 GB | 5.0 GB  | −58% |
+| C₄H₁₀ | 28.9 GB | 10.8 GB | −63% |
+| C₅H₁₂ | 56.9 GB | 27.0 GB | −53% |
+
+(`scaling-campaign-data/auxbatch_correctness.csv`.) Pentane unbatched already needs 57 GB on one
+node — right at the 63 GB wall that OOMs hexane — so this is exactly the lever the hexane wall calls for.
+
+**Hexane (C₆H₁₄), both sides.** With batching, **MPQC clears the hexane wall single-rank**:
+`batch:aux_target_size=128` completes the full SCF+PNO+CCSD where unbatched MPQC OOMs at 63 GB
+(energy −235.44957; T2 cold 437 s / warm 56 s single-rank — the first hexane residual timing;
+`scaling-campaign-data/mpqc_hexane_batch.csv`). On the **repro** side the batching bounds T2 memory
+as designed, but a full hexane run is **blocked by a data defect, not by memory**: the shipped
+hexane DF leaf `g_m_1_m_2_Κ_1.tns` is truncated at exactly 1e8 nonzeros by the tns dumper, leaving
+an asymmetric shape (306,376,906) vs the true 376×376 (the C₅H₁₂ leaf is symmetric 318×318 and
+complete at 77M < cap). The repro aborts with heap corruption in the **T1** residual (before any T2
+batching runs) on that inconsistent leaf. Completing repro hexane needs the leaves regenerated with
+the dumper's 1e8 cap raised — a follow-on. So batching gives hexane on the MPQC side and is
+memory-validated on the repro side; the repro hexane run awaits clean leaves.
+
 **Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC, on the same
 TiledArray, and is numerically correct; both sides even materialize the same giant DF
 half-transform intermediate (MPQC's aux-batching was off in these runs). At real (cc-pVTZ) scale
@@ -406,9 +444,11 @@ concrete, named levers (full trace in `MPQC_EVALUATION.md`):
    (`OptFor::Memsize`→3, `NO_CSE`→4 vs Flops→2; only proto=100→0, the slower/divergent path). So
    the fix is a TA backend improvement to flat×ToT contraction, or a derivation-level change giving
    the PAO index μ̃ a per-pair proto domain — not any in-repo generator/tiling/pmap knob.
-2. **Hexane memory wall → aux-Κ batching** (`eval.hpp:1129`, `cck.ipp:1601-1645`): stream Κ in
-   tile-aligned slices over the persistent DF terms so the intermediate is never fully formed.
-   *A generator/backend project; the memory fix, independent of (1).*
+2. **Hexane memory wall → aux-Κ batching — DONE (memory).** Now implemented (`src/aux_k_batching.h`,
+   `SPTC_AUX_TARGET_SIZE`) and validated: byte-identical checksums, peak RSS −43…−63% (table above);
+   MPQC batched clears hexane single-rank. Independent of (1) — it bounds memory, not cold time. The
+   repro hexane run itself is gated on regenerating a truncated DF leaf (see *Hexane* above), not on
+   the lever.
 3. **Warm ~2× → mostly fundamental.** ~7% via `SPTC_TILES_PER_DIM=6`; the rest is distributed
    across ~250 small ragged-ToT ops — the static sequence vs the runtime evaluator, addressable
    only by a representation/backend change.

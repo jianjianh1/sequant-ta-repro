@@ -235,12 +235,25 @@ term's custom evaluator (`cck.ipp:1644`). Mechanics (`cck.ipp:1601-1645`):
 reason MPQC is faster at np=16; it is the principled way to fit a problem whose intermediate
 does not fit in memory.
 
-**Repro: not implemented.** This is the correct fix for the **hexane** wall (the repro OOMs at
-proto=45 forming the full intermediate even across 16 nodes; `MPQC_COMPARISON.md` §11).
-Matching it = a Κ-batched contraction over the *persistent* DF terms in the generator, summing
-partials, with the same 1/`n_batches` threshold scaling — and it needs the sliced-trange SUMMA
-path, which the pinned `cd53bd3` already provides. It is a generator/backend project, not an
-in-repo knob.
+**Repro: implemented and validated** (2026-07-30). Ported as `src/aux_k_batching.h`
+(`accumulate_df_halftransform_batched`), gated by the env var `SPTC_AUX_TARGET_SIZE` (target Κ
+elements per batch, 0 = off — the same knob shape as MPQC's `batch:aux_target_size`), compiled
+into `ta_auxbatch_main` via the variant TU `src/generated_t2_residual_auxbatch.cpp`. It streams Κ
+over the DF half-transform block (`generated_t2_residual.cpp:487-491`); because Κ is contracted at
+the block root, the per-batch partials simply sum (`+=`) into the residual — the same 1/`n_batches`
+threshold scaling as MPQC, byte-identical math (same cell count, same flops). One implementation
+note: a standalone TA `.block()` slice of a sparse array deadlocks / trips "RMI thread not running"
+on the pinned `cd53bd3`, so the Κ-slice of `g` is built by an explicit tile copy
+(`slice_g_over_K`), not a block expression.
+
+Validated single-node (node3) A/B, `SPTC_AUX_TARGET_SIZE` 0 vs 96, on C₂H₆–C₅H₁₂: T2 checksums
+match the unbatched path to 10–13 significant figures (floating-point reassociation of the Κ sum;
+`nnz` identical), and **peak RSS drops sharply** — 3.65→2.07 GB (C₂H₆), 12.0→5.0 (C₃H₈),
+28.9→10.8 (C₄H₁₀), 56.9→27.0 (C₅H₁₂), i.e. −43 to −63%. So batching is numerically transparent and
+bounds exactly the giant intermediate as intended. It is a **memory** lever, not a speed one (the
+per-cell ToT-einsum cost is unchanged; §11 ratios are unaffected). Raw data:
+`scaling-campaign-data/auxbatch_correctness.csv`. The hexane outcome — where this lever is meant to
+pay off — is in `MPQC_COMPARISON.md` §11.
 
 ## Stage 11 — Energy and amplitude dump (context, not a perf lever)
 

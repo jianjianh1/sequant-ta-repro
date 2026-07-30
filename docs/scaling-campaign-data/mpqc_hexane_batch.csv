@@ -1,0 +1,3 @@
+molecule,np,mode,batch_aux_target_size,T1_s,T2_s,note
+C6H14,1,cold,128,36.32,437.13,occ1 batched single-rank (unbatched OOMs 63GB)
+C6H14,1,warm,128,20.30,56.31,occ2 batched single-rank
