@@ -149,7 +149,22 @@ is how MPQC **drives and executes** the same einsum:
    thread → the repro scales only 1.9–3.5× over 16 ranks while MPQC scales 7.5–11× (the dominant part
    of the np=16 cold gap in the decomposition above). Consistent with the earlier *single-node*
    finding that PaRSEC doesn't help (no network to hide): the backends diverge only where there's a
-   network, i.e. multi-node. **This is the load-bearing "how MPQC drives einsum differently."**
+   network, i.e. multi-node. This was the source-level *prediction* for the load-bearing difference —
+   **but the confirming experiment (E1) refuted it for the repro** (see below).
+
+   **E1 result (REFUTED — 2026-07-30, `scaling-campaign-data/parsec_experiment.csv`).** Rebuilding the
+   repro cold binary against the `cd53bd3-parsec` TiledArray (owning-ToT) and running it does **not**
+   close the gap — it blows it up. PaRSEC-repro cold T2 is **4.6–64× SLOWER** than the Pthreads repro
+   at every point, checksums rank-invariant: C2H6 np1 57.4 s vs 12.4 s (4.6×), C2H6 np2 174.8 s
+   (negative scaling from np1), C4H10 np8 **743 s** vs Pthreads 64 s (11.6×) and MPQC 11.6 s (64×). The
+   slowdown appears even **single-node (np1, no comm)** and only on **T2** (T1 is fine, 1.4 s), so it is
+   PaRSEC's per-task scheduling overhead on the repro's **millions of tiny ToT tasks** — fine for
+   small-basis with few tasks (the earlier §4 read of "PaRSEC ≈ Pthreads single-node") but catastrophic
+   for cc-pVTZ's giant fragmented intermediate. **So the backend is not a lever the repro can flip.**
+   MPQC gets *good* PaRSEC scaling on the *same* fine-grained ToT algebra, so its advantage must come
+   from something the repro lacks that makes PaRSEC's distributed scheduling of those tiny tasks
+   tractable (data-layout/pmap co-location, or a coarser effective task graph from the runtime
+   evaluator) — an **open question**, but empirically it is *not* the `MADNESS_TASK_BACKEND` flag alone.
 
 2. **Runtime cross-term cache dedup — real but wall-negligible.** MPQC walks a per-term binary forest
    through one shared `CacheManager` (`min_repeats=2`, keyed on the scalar-free tensor-network
@@ -173,9 +188,14 @@ compute-equivalent to MPQC's P/NP cache — same t-independent work done once); 
 the residual not the energies); R2 symmetrization (MPQC does slightly *more* per iteration — one
 O(o²v²) permute/add the repro correctly skips).
 
-**Bottom line:** MPQC uses the same `TA::einsum`, the same distribution algorithm, and (once cold) the
-same t-independent work. The single difference that moves the cold gap is the **PaRSEC task backend**,
-which distributes that identical work across nodes efficiently where MADNESS-Pthreads cannot. The
-cross-term cache and threshold are real but wall-negligible. This is directly testable — a
-`tiledarray-cd53bd3-parsec` install and a prior single-node PaRSEC repro build already exist; the
-open experiment is a PaRSEC *multi-node* re-sweep (never run) to confirm the scaling gap closes.
+**Bottom line (revised after E1).** MPQC uses the same `TA::einsum`, the same distribution algorithm,
+and (once cold) the same t-independent work; the cross-term cache and threshold are real but
+wall-negligible. The obvious candidate for the multi-node lever — the PaRSEC task backend — was
+**tested and refuted**: the repro on PaRSEC is 4.6–64× *slower*, because PaRSEC's per-task overhead is
+pathological for the repro's millions of tiny ToT tasks (MADNESS-Pthreads handles fine-grained
+shared-memory tasks far better here). So the scaling gap is **not** a backend flag. MPQC scales well
+with PaRSEC on the same algebra, so its multi-node advantage lives in how its work is *laid out /
+scheduled* to make those tiny tasks tractable for a distributed runtime — layout/pmap co-location or a
+coarser effective task graph — which the repro, emitting a flat static einsum sequence over a
+default-pmap giant intermediate, does not reproduce. **That, not the einsum primitive or the backend,
+is the real open lever** — and it is a substantial layout/scheduling change, not a knob.
