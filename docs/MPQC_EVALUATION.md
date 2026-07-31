@@ -6,7 +6,9 @@ for each stage states what the reproduction already matches, what it doesn't, an
 matching would take. All line numbers are against the `mpqc4` and `sequant-fork` trees checked
 out on this node (`mpqc4/src/mpqc/chemistry/qc/lcao/cc/cck.{ipp,h}`; SeQuant eval backend under
 `sequant-fork/SeQuant/core/`). Both build on the same TiledArray fork commit `cd53bd3`
-(`jianjianh1/tiledarray:csv-cck-summa-root-fix`), so any difference is above the TA layer.*
+(`jianjianh1/tiledarray:csv-cck-summa-root-fix`), so any difference is above the TA layer.
+`LAYERED_IR.md` recasts this stage-by-stage trace as a formal layered-IR lowering and shows the
+MPQC-vs-repro difference is a single scheduling pass.*
 
 ## The one-line story
 

@@ -133,3 +133,8 @@ on a copy of the same forest, writing `generated_R{1,2}.ctir`. Regenerate with t
 
 CTIR is deliberately **descriptive, not a lowering IR** — its job is legibility and making the
 repro(static)-vs-MPQC(runtime) difference explicit, which is exactly the gap the einsum leaves.
+
+> In the layered-IR design (`LAYERED_IR.md`), CTIR is the **descriptive prototype of the L1
+> "Scheduled / Resource IR"** — the value-DAG carrying the schedule (cache class, tiling cost,
+> aux-Κ batchability). An *executable* L1 would turn these annotations into decisions that lower to
+> the einsum (L0); see `LAYERED_IR.md` §2/§5.

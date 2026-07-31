@@ -48,6 +48,10 @@ not tiling or pmap — both empirically ruled out).
   what the einsum C++ hides (per-cell cost / CELL-BOUND, t-indep vs t-dep +
   persistent, aux-Κ batchability) and why the einsum can't describe MPQC's
   runtime computation. Samples in `docs/scaling-campaign-data/*.ctir`.
+- `docs/LAYERED_IR.md` — design/feasibility study for a stack of layered IRs
+  that progressively lower the residual from the MPQC/SeQuant equation to
+  einsum sequences (MLIR-style); shows the pipeline is already an informal
+  lowering, and that the MPQC-vs-repro difference is a single scheduling pass.
 - `tools/` — optional diagnostics/benchmarks (off by default; see
   `tools/README.md`).
 
