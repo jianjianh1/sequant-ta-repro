@@ -130,3 +130,52 @@ intermediate whose per-op GEMMs are fundamentally skinny in this method, for MPQ
 - "~100× off peak / per-outer-cell task overhead" → the hotspot is ~9–10% of peak as a *skinny GEMM*;
   the wall is **thread sync/starvation** (~70%), not task-spawn/retile machinery (those buckets ~0).
 - The achievable restructuring speedup is **~2.2–2.6×, capped**, not order-of-magnitude.
+
+## How MPQC drives einsum differently (same primitive)
+
+A separate source investigation (over `mpqc4`, `sequant-fork`, the `cd53bd3` TiledArray) answers
+"what does MPQC use *instead* of `TA::einsum`?" — **nothing at the primitive level.** Every
+array×array contraction in MPQC's CSV-CCSD residual is `TA::einsum`: flat×flat (`result.hpp:381`),
+flat×ToT (`:612`), ToT×ToT (`:621`/`:628`). No native `*`/SUMMA, no BTAS contraction, no hand GEMM.
+The distribution map is byte-identical too (free-mode 2-D ProcGrid + `SlabbedPmap` replicating the
+occupied-pair index, `cont_engine.h:824-948`; the legacy sub-world path is off in both; input pmap is
+re-mapped away inside einsum — which is why the repro's `SPTC_CYCLIC_PMAP` did nothing). What differs
+is how MPQC **drives and executes** the same einsum:
+
+1. **Task backend — PaRSEC vs Pthreads (the one lever that matters; multi-node).** MPQC's SIF sets
+   `MADNESS_TASK_BACKEND=PaRSEC` (`mpqc.def`, `mpqc.cpp:142`); the repro's TiledArray is Pthreads
+   (`madness/config.h`). Same task graph, but PaRSEC's distributed scheduler overlaps comm/compute
+   across nodes while MADNESS-Pthreads funnels every remote tile fetch through a single progress
+   thread → the repro scales only 1.9–3.5× over 16 ranks while MPQC scales 7.5–11× (the dominant part
+   of the np=16 cold gap in the decomposition above). Consistent with the earlier *single-node*
+   finding that PaRSEC doesn't help (no network to hide): the backends diverge only where there's a
+   network, i.e. multi-node. **This is the load-bearing "how MPQC drives einsum differently."**
+
+2. **Runtime cross-term cache dedup — real but wall-negligible.** MPQC walks a per-term binary forest
+   through one shared `CacheManager` (`min_repeats=2`, keyed on the scalar-free tensor-network
+   identity, `cache_manager.hpp`, `eval_node_compare.hpp`), so identical differently-scaled
+   summand-root contractions collapse to one einsum. The repro's static per-term CSE can't merge
+   summand roots. **Verified directly:** an exact-signature scan of `src/generated_t2_residual.cpp`
+   finds **7** redundant two-operand einsums (208 total, 201 distinct, largest group 3×) — and **all
+   of them are small o-space contractions; the giant μ̃Κ hotspot appears exactly once.** (A
+   canonical/dummy-relabel-aware count — what the cache can in principle catch — is higher, ~29, but
+   that over-counts via dummy relabeling + the repro's variable reuse, and still never touches the
+   hotspot.) So this is a real mechanism but **negligible in wall time**, not a meaningful lever.
+
+3. **Sparse screening threshold — minor.** MPQC runs the residual under `csv:tTA` = 1e-8
+   (`cck.ipp:958`); the repro uses TA's default (~1.19e-7, overridable via `SPTC_SPARSE_THRESHOLD`).
+   A work difference in principle, but the repro's residual was earlier found threshold-invariant
+   (1e-8…1e-16 give the same checksum), so the wall impact is expected to be small. Testable.
+
+**Ruled out (not repro disadvantages):** cross-iteration persistence (the repro's warm/cold split is
+compute-equivalent to MPQC's P/NP cache — same t-independent work done once); ReorderSum
+(liveness/locality only, same flops); the aux-Κ batched evaluator (memory-only, default-off, and on
+the residual not the energies); R2 symmetrization (MPQC does slightly *more* per iteration — one
+O(o²v²) permute/add the repro correctly skips).
+
+**Bottom line:** MPQC uses the same `TA::einsum`, the same distribution algorithm, and (once cold) the
+same t-independent work. The single difference that moves the cold gap is the **PaRSEC task backend**,
+which distributes that identical work across nodes efficiently where MADNESS-Pthreads cannot. The
+cross-term cache and threshold are real but wall-negligible. This is directly testable — a
+`tiledarray-cd53bd3-parsec` install and a prior single-node PaRSEC repro build already exist; the
+open experiment is a PaRSEC *multi-node* re-sweep (never run) to confirm the scaling gap closes.
