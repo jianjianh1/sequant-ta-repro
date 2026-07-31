@@ -27,7 +27,7 @@ C₂H₆–C₅H₁₂ (cc-pVTZ) with a 1-rank-per-node sweep over CloudLab node
 run on *both* sides.** The key correction it delivers: both the repro *and*
 MPQC scale well multi-node, so the fair comparison is at **equal ranks** —
 and there MPQC is faster for every real molecule (repro ~2–3× slower warm,
-~4.5–7× slower cold at np=16; the repro is ahead only on tiny ethane's warm
+~4.5–5.5× slower cold at np=16 (up to ~7× at np=4); the repro is ahead only on tiny ethane's warm
 residual, where MPQC's small-workload overhead dominates). The gap is pinned
 to one giant DF-half-transform intermediate that the repro materialises —
 which both scales worse across ranks and is a hard memory wall (it OOMs
@@ -45,7 +45,7 @@ superseded by owning-ToT — see §11).
 | **Derivation** | `make_cceqvec_csv_closedshell` (`mpqc4:sequant.cpp:156-211`): spin-free, `mbpt::Context{.csv=CSV::Yes}`, `CC{k}.t()`, per-rank biorthogonal transform (`tail_factor`→`biorthogonal_transform(external_indices(S))`→re-prepend `S`→`simplify`). | Same pipeline, run offline in `sequant-fork`'s `test_csv_ccsd_derivation.cpp`; output pasted into `src/generated_t{1,2}_residual.cpp`. | ✅ same algebra |
 | **Optimizer** | `generate_csv_closedshell` (`cck.ipp:1516-1541`): `density_fit`→`csv_transform`→`flatten`→`optimize(OptFor::Flops, n_replay=10, real average_csv_extent, is_volatile_leaf=t)`. | Same `optimize()` (fork = `d3a38f8f` + export commits; **no optimizer change**), same options, same extents (real `average_csv_extent(2)`≈44.6 ≈ hardcoded 45). | ✅ same order |
 | **Binarization/eval** | `populate_equation_nodes`→per-summand binary eval trees; `sequant::evaluate(node, annot, leaf_eval, Cs[R])` with a runtime `CacheManager` (`min_repeats=2`), `cck.ipp:1679-1692`. | Same binarization (fork's `eval_expr.cpp`); exported to a flat `TA::einsum` sequence with cross-term CSE instead of a runtime cache. | ⚠️ static CSE vs runtime cache (§5-6) |
-| **Contraction primitive** | `TA::einsum` / `TA::einsum<DeNest::True>` (SeQuant eval backend `result.hpp:379,613-628`). | **Identical** `TA::einsum` / `TA::einsum<DeNest::True>` (`generated_t{1,2}`). | ✅ same TA call |
+| **Contraction primitive** | `TA::einsum` / `TA::einsum<DeNest::True>` (SeQuant eval backend `backends/tiledarray/result.hpp:381,613-628`). | **Identical** `TA::einsum` / `TA::einsum<DeNest::True>` (`generated_t{1,2}`). | ✅ same TA call |
 | **ToT storage** | `DistArray<Tensor<ArenaTensor<T>>, SparsePolicy>` (`csv.h:34`), arena-pinned inner cells. | Identical (`src/ta_tensors.h`); owning `Tensor<Tensor<double>>` also available via `SPTC_OWNING_TOT` (§8). | ✅ same |
 | **Tiling** | occ retiled to `occ_tile_size=4` for the residual (§3). | was size-1; now coarse `occ_tile=2` (§3). | ✅ after §3 |
 | **Backend** | SIF built `-DMADNESS_TASK_BACKEND=PaRSEC`; single-rank, `MAD_NUM_THREADS≈11-12`. | MADNESS/Pthreads (PaRSEC tested, slower — §4). | ⚠️ cross-backend, immaterial (§4) |
@@ -125,15 +125,15 @@ Three builds isolate compiler from backend (coarse tiling, OpenBLAS,
 ## 5. Same TiledArray, same operations — no eval-structure gap
 
 Because both sides use the same TA, the residual difference had to be in
-*how* each drives it. A per-op trace (`src/sptc_traced_einsum.h`,
-`SPTC_TRACE_OPS`) diffed against MPQC's `steps.csv` (`traces/parse_trace.py`)
+*how* each drives it. A per-op trace (`tools/sptc_traced_einsum.h`, enabled at compile time;
+output path via `SPTC_TRACE_OPS_PATH`) diffed against MPQC's `steps.csv` (`traces/parse_trace.py`)
 settled it:
 
 - **Same primitive:** every contraction is `TA::einsum` /
   `TA::einsum<DeNest::True>` on both sides — not a cheaper API in MPQC.
 - **Same intermediates, including the giants.** The repro forms two large
-  DF/CSV intermediates — `g·g→i,μ̃,μ̃,μ̃` (13M nnz, `generated_t2:211`) and
-  `g·C→i,i,μ̃,Κ;a` (70M nnz, `generated_t2:486`). MPQC's trace contains the
+  DF/CSV intermediates — `g·g→i,μ̃,μ̃,μ̃` (13M nnz, `generated_t2:212`) and
+  `g·C→i,i,μ̃,Κ;a` (70M nnz, `generated_t2:487`). MPQC's trace contains the
   **byte-for-byte same nodes** (iter1 term39 nnz 10,370,808; term81 nnz
   70,211,232). Contraction order and intermediate structure are the same —
   the optimizer is not the difference (the fork's `optimize()` is unchanged
@@ -256,8 +256,8 @@ SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 SPTC_TRIALS=3 SPTC_WARMUP=1 \
 
 Env-gated knobs leave defaults untouched when unset:
 `SPTC_COARSE_OCC`/`SPTC_OCC_TILE`/`SPTC_COARSE_PAD`/`SPTC_TILES_PER_DIM`
-(tiling), `-DSPTC_OWNING_TOT` (owning fallback), `SPTC_TRACE_OPS`
-(per-op trace).
+(tiling), `-DSPTC_OWNING_TOT` (owning fallback), `SPTC_TRACE_OPS_PATH`
+(per-op trace output path; the trace itself is compile-time via `tools/sptc_traced_einsum.h`).
 
 ## Verification
 - **Correctness gate (every config/rank count):** the §2 checksums, ± last
@@ -283,8 +283,8 @@ SPTC_TILES_PER_DIM=8`, `MAD_NUM_THREADS=8`, `--bind-to none`).
 
 **Both sides multi-rank scale — compare at the SAME rank count.** A single-rank
 MPQC number is *not* MPQC's best at these sizes: run multi-node, MPQC scales strongly
-for the real molecules (C₄H₁₀ cold T2 76.9 s single-rank → **10.2 s at np=16, 7.6×**;
-C₅H₁₂ 233 → **20.4 s, 11×**). Only ethane is too small to benefit (its warm
+for the real molecules (C₄H₁₀ cold T2 76.9 s single-rank → **10.3 s at np=16, 7.5×**;
+C₅H₁₂ 233 → **20.5 s, 11×**). Only ethane is too small to benefit (its warm
 multi-node is marginally *slower* than single-rank). So the honest comparison is
 same-np, both sides:
 
@@ -340,7 +340,7 @@ np, nnz identical per molecule — the multi-rank correctness gate.)*
 efficiently; the repro's generated sequence materialises it explicitly, which both
 scales worse and is a hard **memory wall** (see *Limits*). The warm gap (~2×) is the
 same intermediate's ragged-ToT contraction efficiency. Note the repro *does* scale
-(C₅H₁₂ cold 339→15 s over the sweep) — it is just outpaced by MPQC's better
+(C₅H₁₂ cold 391.5→112 s over the np1→np16 sweep) — it is just outpaced by MPQC's better
 multi-node DF handling.
 
 **Correctness.** Anchored on the gauge-free R(T=0): feeding zero t-amplitudes, the
@@ -356,10 +356,11 @@ segfaults at np≥8 for the larger molecules (cross-rank lazy-deletion race in M
 `-DSPTC_OWNING_TOT` (owning `Tensor<double>` inner cells) removes it, is numerically
 identical, and is ~40 % faster here.
 
-**Limits & the path to close the gap.** Hexane (C₆H₁₄, occ 19 / PNO 351 / RI 906)
-exhausts memory even across all 16 nodes for the repro (`std::bad_alloc`) — the giant
-intermediate is a memory wall (MPQC single-rank hexane also OOMs at 63 GB; MPQC
-multi-node clears it). **The cold-precompute fix that worked was owning-ToT, not proto=100.** The giant μ̃Κ
+**Limits & the path to close the gap.** Hexane (C₆H₁₄, occ 19 / PNO 351 / RI 906) *was* a memory
+wall for the repro at proto=45 (`std::bad_alloc` forming the giant intermediate, even across 16
+nodes; MPQC single-rank also OOMs at 63 GB). **That wall is now cleared by aux-Κ batching** — the
+repro completes hexane single-node at 27.5 GB peak (see the *Hexane* subsection below); the
+remaining gap items are the cold *time* levers. **The cold-precompute fix that worked was owning-ToT, not proto=100.** The giant μ̃Κ
 intermediate is only catastrophic with the default arena inner tile (`TA::ArenaTensor`): there
 it costs ~70 s serial, and a generator lever (`proto=100`, raising `optimize()`'s PNO/proto
 extent so the cost model never forms it) cut cold T2 ~3× at np=1. But **owning-ToT**
@@ -400,8 +401,9 @@ batching (lever 2) is now ported to the repro: `src/aux_k_batching.h`
 (`accumulate_df_halftransform_batched`), gated by `SPTC_AUX_TARGET_SIZE` (target Κ elements per
 batch, 0 = off — the same knob shape as MPQC's `batch:aux_target_size`), built as
 `ta_auxbatch_main`. Because Κ is contracted at the DF-block root, streaming it in tile-aligned
-batches and summing the partials is byte-identical math to the unbatched einsum (same cell count,
-same flops) — a **memory** lever, not a speed one; it does not change the cold/warm ratios above.
+batches and summing the partials is algebraically identical to the unbatched einsum (same cell
+count, same flops; results agree to 10–13 sig figs modulo Κ-sum reassociation) — a **memory**
+lever, not a speed one; it does not change the cold/warm ratios above.
 Validated single-node (`SPTC_AUX_TARGET_SIZE` 0 vs 96) on C₂H₆–C₅H₁₂: T2 checksums match the
 unbatched path to 10–13 significant figures (float reassociation of the Κ sum, `nnz` identical),
 and **peak RSS drops sharply** because the giant μ̃Κ intermediate is never fully formed:
@@ -419,14 +421,20 @@ node — right at the 63 GB wall that OOMs hexane — so this is exactly the lev
 **Hexane (C₆H₁₄), both sides.** With batching, **MPQC clears the hexane wall single-rank**:
 `batch:aux_target_size=128` completes the full SCF+PNO+CCSD where unbatched MPQC OOMs at 63 GB
 (energy −235.44957; T2 cold 437 s / warm 56 s single-rank — the first hexane residual timing;
-`scaling-campaign-data/mpqc_hexane_batch.csv`). On the **repro** side the batching bounds T2 memory
-as designed, but a full hexane run is **blocked by a data defect, not by memory**: the shipped
-hexane DF leaf `g_m_1_m_2_Κ_1.tns` is truncated at exactly 1e8 nonzeros by the tns dumper, leaving
-an asymmetric shape (306,376,906) vs the true 376×376 (the C₅H₁₂ leaf is symmetric 318×318 and
-complete at 77M < cap). The repro aborts with heap corruption in the **T1** residual (before any T2
-batching runs) on that inconsistent leaf. Completing repro hexane needs the leaves regenerated with
-the dumper's 1e8 cap raised — a follow-on. So batching gives hexane on the MPQC side and is
-memory-validated on the repro side; the repro hexane run awaits clean leaves.
+`scaling-campaign-data/mpqc_hexane_batch.csv`).
+
+On the **repro** side, batching now **runs the full hexane residual** — but getting there first
+required fixing a *data* defect. The originally-shipped hexane DF leaf `g_m_1_m_2_Κ_1.tns` was
+truncated at exactly 1e8 nonzeros by the tns dumper's `tns_max_elem_rows` cap (`cck.h:296`), leaving
+an asymmetric shape (306,376,906) vs the true 376×376 (the C₅H₁₂ leaf is symmetric 318×318, complete
+at 77M < cap) — the repro aborted with heap corruption in **T1** on that inconsistent leaf, *before*
+any T2 batching. Regenerating `g0` uncapped (`tns_max_elem_rows=2e8`) exceeds one node's memory to
+dump, so it was produced by a **multi-rank (np=16) MPQC dump** — a complete, symmetric
+376×376×906 tensor with 127.5M nonzeros. On that fixed leaf set, `ta_auxbatch_main`
+(`SPTC_AUX_TARGET_SIZE=48`) **completes hexane single-node**: T1 and T2 residuals to convergence
+(T2 nnz 591501, sum −10.6842642175), **peak RSS 27.5 GB** (batched) vs the 63 GB wall it hit before
+— T2 cold 933 s single-rank (`scaling-campaign-data/repro_hexane_batch.csv`). So aux-Κ batching clears the
+hexane wall on **both** sides; the only friction was regenerating one over-capped input leaf.
 
 **Takeaway.** The reproduction issues the same `TA::einsum` algebra as MPQC, on the same
 TiledArray, and is numerically correct; both sides even materialize the same giant DF
@@ -444,11 +452,11 @@ concrete, named levers (full trace in `MPQC_EVALUATION.md`):
    (`OptFor::Memsize`→3, `NO_CSE`→4 vs Flops→2; only proto=100→0, the slower/divergent path). So
    the fix is a TA backend improvement to flat×ToT contraction, or a derivation-level change giving
    the PAO index μ̃ a per-pair proto domain — not any in-repo generator/tiling/pmap knob.
-2. **Hexane memory wall → aux-Κ batching — DONE (memory).** Now implemented (`src/aux_k_batching.h`,
-   `SPTC_AUX_TARGET_SIZE`) and validated: byte-identical checksums, peak RSS −43…−63% (table above);
-   MPQC batched clears hexane single-rank. Independent of (1) — it bounds memory, not cold time. The
-   repro hexane run itself is gated on regenerating a truncated DF leaf (see *Hexane* above), not on
-   the lever.
+2. **Hexane memory wall → aux-Κ batching — DONE.** Implemented (`src/aux_k_batching.h`,
+   `SPTC_AUX_TARGET_SIZE`) and validated: checksums transparent (10–13 sig figs), peak RSS −43…−63% (table above).
+   Clears the hexane wall on **both** sides — MPQC batched single-rank, and the repro completes hexane
+   single-node at 27.5 GB (T2 nnz 591501) once its over-capped `g0` leaf is regenerated (see *Hexane*
+   above). Independent of (1) — it bounds memory, not cold time.
 3. **Warm ~2× → mostly fundamental.** ~7% via `SPTC_TILES_PER_DIM=6`; the rest is distributed
    across ~250 small ragged-ToT ops — the static sequence vs the runtime evaluator, addressable
    only by a representation/backend change.

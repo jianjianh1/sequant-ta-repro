@@ -95,7 +95,7 @@ this repo had to discover the hard way:
 def I_ap2_μ̃_Κ [μ̃ Κ ; a]⟨i j⟩ tot  uses=1  t-indep
     = contract{μ̃'} g_μ̃_μ̃_Κ * C_ap2_μ̃
     cost: cells=1.6e+06  inner=45  flops=8.1e+09  per-cell=5130   ⚠ CELL-BOUND (1.6e+06 tiny ToT tasks)
-def CSE37_i_i_ap2_ap2_Κ [i j Κ ; a a'] tot  uses=1  t-indep  [persistent: built once, reused across iters]
+def CSE37_i_i_ap2_ap2_Κ [i j Κ ; a a'] tot  uses=2  t-indep  [persistent: built once, reused across iters]
     = contract{μ̃} I_ap2_μ̃_Κ * C_μ̃_ap2
 ```
 
@@ -113,7 +113,9 @@ The whole-residual `summary:` block makes the split quantitative: for T2, **54 o
 t-indep (~71 % of total flops), 33 of them persistent** — i.e. most of the residual's arithmetic is
 amplitude-independent work MPQC builds once and the repro's cold driver rebuilds every pass, plus
 **37 aux-Κ-batchable** contractions. That is the warm/cold and hexane-memory story (`MPQC_EVALUATION.md`
-§6/§10) in three lines the einsum cannot express.
+§6/§10) in three lines the einsum cannot express. (These count the collapsed SSA/DAG *values*;
+`MPQC_COMPARISON.md` §7's "55 t-indep / 197 t-dep = 252 statements" counts the *flat straight-line
+statements* — the same split over a different unit.)
 
 Cross-term sharing is legible too: e.g. `def CSE6_i_i_i_ap2 … uses=24` and `CSE4_… uses=22` show
 single intermediates feeding 20+ downstream contractions — the reuse MPQC's runtime cache exploits

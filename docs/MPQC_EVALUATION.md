@@ -25,23 +25,28 @@ matter for performance:
    (`cck.ipp:1563-1565`), so the big DF half-transform intermediate is tiled and *distributed*
    the way the upstream PNO/CSV solver already laid out the occupied space. The repro builds
    its **own** tiling and takes **TiledArray's default pmap** in `build_tot_array`
-   (`src/ta_builder.h:363`). **This is the actionable cold-gap lever** (§8).
+   (`src/ta_builder.h:430-431`, the pmap slot defaulting to empty). **This looked like the
+   actionable cold-gap lever, but §8 empirically refutes the input-pmap/tiling fix** — the real
+   cost is inside the ToT-`einsum` (see §8 and lever (a)).
 
 A refinement that corrects the earlier framing: in the alkane runs measured for
 `MPQC_COMPARISON.md` §11, MPQC's aux-Κ batching was **off** (`batch:aux_target_size` default
 `0`, `cck.h:105`, `cck.ipp:247-248`). So **MPQC also materializes the whole giant μ̃Κ DF
 half-transform intermediate** — its runtime cache avoids *recomputation*, not *size*. The cold
 np=16 gap is therefore **not** "MPQC never forms the intermediate"; both sides form it and both
-call the identical `TA::einsum` SUMMA. The gap is the **tiling + pmap** of that one contraction
-(§8/§9). Aux-Κ batching (§10) is a *separate, opt-in memory* technique — the lever for the
+call the identical `TA::einsum` SUMMA. The gap is in *how that one contraction is evaluated* —
+first hypothesized as **tiling + pmap**, but §8 shows the input pmap/tiling is empirically refuted
+(cyclic pmap = no speedup) and the real cost is the ToT-`einsum` per-outer-cell overhead (§8/§9).
+Aux-Κ batching (§10) is a *separate, opt-in memory* technique — the lever for the
 hexane wall, not the np=16 speed.
 
 ---
 
 ## Stage 1 — Derivation of the equations (identical: both are SeQuant)
 
-`CCk::evaluate_csv_closedshell` builds the residual equation set once
-(`cck.ipp:1513-1523`):
+`CCk::generate_csv_closedshell` builds the residual equation set
+(`cck.ipp:1513-1523`); `evaluate_csv_closedshell` (`cck.ipp:1584`) invokes it once via the
+`if (csv_eqn.Rs.empty())` guard (`cck.ipp:1591`):
 
 ```
 csv_eqn.Rs = make_cceqvec_csv_closedshell(k_, zero_t1_);   // 1513
@@ -124,7 +129,7 @@ batched custom evaluator, §10):
 - **`Sum` node** → the operands are accumulated.
 
 The top-level Σ over summands is accumulated in the driver against a template-pinned output
-annotation (`cck.ipp:895`, `:1706` `make_R_template_csv`).
+annotation (`cck.ipp:1706-1708` `make_R_template_csv`).
 
 **Repro: matched primitive.** Every generated statement is one `TA::einsum` /
 `einsum<DeNest::True>` on the same operand types with the same annotations — the identical TA
@@ -150,9 +155,10 @@ same operations.)
   the runtime cache produce the same reuse.
 - The **P/NP cross-iteration** reuse ≈ the repro's **warm/cold split**: `ta_warm_t2`
   (`tools/gen_split/`) precomputes the t-independent DF/CSV block once and times only the
-  t-dependent update — exactly MPQC's P-entries-survive-`reset()` behavior. Warm-vs-warm the
-  two are near parity (~1.3×, `MPQC_COMPARISON.md` §6/§11), which is the evidence this stage is
-  effectively matched.
+  t-dependent update — exactly MPQC's P-entries-survive-`reset()` behavior. Warm-vs-warm they are
+  near parity for the small molecules (C₃H₈ cc-pVTZ warm np1 ≈ 1.3×, `MPQC_COMPARISON.md` §11;
+  the ratio grows to ~2–3× by C₅H₁₂ — §11's headline "repro ~2–3× slower warm"), which is the
+  evidence this stage's *mechanism* is matched even though the wall-clock diverges with size.
 
 ## Stage 7 — Result template + R2 symmetrization (matched as-is)
 
@@ -193,12 +199,14 @@ way the solver already decided.
 
 **Repro: builds its own tiling and takes TiledArray's default pmap.** `build_tot_array`
 (`src/ta_builder.h:211-449`) constructs the outer `TiledRange` from env-driven knobs
-(`SPTC_COARSE_OCC` / `SPTC_OCC_TILE` / `SPTC_TILES_PER_DIM`, `ta_builder.h:314-323`) and then
-`ArrayToT array(world, outer_trange, sp_shape)` (`ta_builder.h:363`) — **no explicit pmap
-argument**, so TA assigns its default blocked pmap keyed off that trange. Two arrays that MPQC
+(`SPTC_TILES_PER_DIM` at `ta_builder.h:60-62`, `SPTC_COARSE_OCC` / `SPTC_OCC_TILE` at `:293-298`;
+the `make_trange` build at `:380-390`) and then
+`ArrayToT array(world, outer_trange, sp_shape, maybe_cyclic_pmap(...))` (`ta_builder.h:430-431`) —
+the pmap slot **defaults to empty** (TA's default blocked pmap keyed off that trange) unless
+`SPTC_CYCLIC_PMAP` is set (`maybe_cyclic_pmap`, `:146-151`). Two arrays that MPQC
 would co-locate can land on different rank layouts here. Since the cold np=16 cost is dominated
-by the SUMMA of the one giant DF intermediate (§9 / `MPQC_COMPARISON.md` §3, one contraction is
-~87% of cold T2), its proc-grid and load balance — i.e. this tiling+pmap — is the plausible
+by the SUMMA of the one giant DF intermediate (§9; ~87% of cold T2 per the campaign per-op trace,
+not committed here), its proc-grid and load balance — i.e. this tiling+pmap — is the plausible
 cold-gap cause. **Actionable** (see §Verification and §Levers) — and the verification below
 narrows *which* part: the occ tile *size* turns out not to matter, so it is the **pmap
 co-location**, not the tiling granularity, that is the real lever.
@@ -208,7 +216,7 @@ co-location**, not the tiling granularity, that is the real lever.
 The big intermediate `I[i,i,μ̃,Κ;a] = g_μ̃μ̃Κ (dense DF) × C_ap2_μ̃ (ToT)` and its consumer are
 `TA::einsum` calls whose distributed contraction is TiledArray's **SUMMA** over the operand
 pmaps. The pinned fork commit `cd53bd3` ("drop the `BinaryEvalImpl` trange-equality assertion,
-K-batch friendly", exercised at `cck.ipp:1619`) is what lets *sliced* tranges drive SUMMA —
+K-batch friendly", exercised by the batched-evaluator install at `cck.ipp:1643`) is what lets *sliced* tranges drive SUMMA —
 required for the batched path (§10) and for the sparse/ragged tranges these ToT arrays carry.
 
 **Repro: same TA, same SUMMA.** No difference at this layer — which is precisely why §8 (what
@@ -219,7 +227,7 @@ pmap the operands carry *into* SUMMA) is where the cold gap lives.
 MPQC can stream the DF aux index Κ in tile-aligned slices so the full-Κ intermediate is
 **never materialized**. Enabled only when `batch:aux_target_size > 0` (`cck.ipp:1601`,
 `batch_aux`); it installs `sequant::make_batched_custom_evaluator` (`eval.hpp:1129`) as the
-term's custom evaluator (`cck.ipp:1644`). Mechanics (`cck.ipp:1601-1645`):
+term's custom evaluator (`cck.ipp:1643`). Mechanics (`cck.ipp:1601-1645`):
 - Κ is sliced by `mode_batches_of_trange1` (`result.hpp:249`) into tile-aligned batches;
   partial contractions are summed, bounding peak memory to one batch's worth.
 - The block-sparse **screening threshold is divided by `n_batches`** (`cck.ipp:1620-1640`):
@@ -241,7 +249,8 @@ elements per batch, 0 = off — the same knob shape as MPQC's `batch:aux_target_
 into `ta_auxbatch_main` via the variant TU `src/generated_t2_residual_auxbatch.cpp`. It streams Κ
 over the DF half-transform block (`generated_t2_residual.cpp:487-491`); because Κ is contracted at
 the block root, the per-batch partials simply sum (`+=`) into the residual — the same 1/`n_batches`
-threshold scaling as MPQC, byte-identical math (same cell count, same flops). One implementation
+threshold scaling as MPQC, algebraically identical (same cell count, same flops; results agree to
+10–13 sig figs modulo Κ-sum reassociation). One implementation
 note: a standalone TA `.block()` slice of a sparse array deadlocks / trips "RMI thread not running"
 on the pinned `cd53bd3`, so the Κ-slice of `g` is built by an explicit tile copy
 (`slice_g_over_K`), not a block expression.
@@ -287,7 +296,7 @@ wall time at np=16 on C₄H₁₀ (median of 2 timed trials; MPQC's number for t
 | `occ17_t2` | occ tiled at 2 (correct extent) | ~49.4 | ≈ baseline — no change |
 | `occ17_t4` | occ tiled at 4 | ~52.4 | slightly *worse*; checksum also drifts (see below) |
 | `occ17_t8` | occ tiled at 8 | ~80.0 | markedly *worse* |
-| `noocc_tpd8` | pure default: pair-key dims forced to size 1 (`ta_builder.h:319-321`) | pathological — did not finish (>14 min/pass, stopped) | why the campaign coarsens occ at all |
+| `noocc_tpd8` | pure default: pair-key dims forced to size 1 (`ta_builder.h:386-389`) | pathological — did not finish (>14 min/pass, stopped) | why the campaign coarsens occ at all |
 | `occ17_t4_tpd6` | occ 4 + `TPD=6` (warm optimum) | ~53.5 | no speedup, and checksum diverges 100× (see caveat) |
 
 Finer occ tiling (2) leaves cold np=16 unchanged (~48–49 s); coarser (4, 8) makes it *worse*;
@@ -317,7 +326,7 @@ exact fix: **replace TA's default blocked pmap for the DF-carrying arrays with o
 distributes the *nonzero* tiles evenly across all ranks** (e.g. a cyclic/round-robin pmap over
 occupied tiles, or dropping the frozen-core-zeroed leading tiles from the `TiledRange` so the
 blocked pmap no longer front-loads empty ranges) — passed explicitly to `ArrayToT array(world,
-outer_trange, sp_shape, pmap)` in place of the current defaulted `ta_builder.h:363`. This would
+outer_trange, sp_shape, pmap)` in place of the current defaulted slot at `ta_builder.h:430-431`. This would
 engage the ~3 idle ranks; it is *not* an occ-tile-count retune.
 
 *Caveat surfaced by the sweep — coarse multi-pair occ tiling is numerically unsafe here.* With
@@ -415,7 +424,7 @@ evaluation approach"):
 - **(a) Cold np=16 (~5× at cc-pVTZ) → pmap co-location of the DF-carrying ToT arrays.** Both
   sides materialize the giant μ̃Κ intermediate and call the same `TA::einsum` SUMMA; MPQC's
   operands inherit the CSV solver's `trange`/`shape`/`pmap` (`cck.ipp:1563-1565`), the repro's
-  take TA's default from a self-chosen tiling (`ta_builder.h:363`). The verification sweep above
+  take TA's default from a self-chosen tiling (`ta_builder.h:430-431`). The verification sweep above
   shows the occ tile *size* is **not** the lever (finer = no change, coarser = worse, none near
   MPQC's ~10 s); what remains is the **pmap** — whether the two SUMMA operands are co-resident
   and how the intermediate's tiles spread across ranks. Tried and **refuted** as a timing fix:
@@ -430,10 +439,13 @@ evaluation approach"):
   slower, divergent μ̃-family factorization). So this is **not** an in-repo lever: it needs a TA
   backend fix to flat×ToT contraction, or a derivation-level change giving μ̃ a per-pair proto
   domain — a method change, not a generator/tiling/pmap knob.
-- **(b) Hexane memory wall → port aux-Κ batching.** Stream Κ in tile-aligned slices over the
-  *persistent* DF terms, sum partials, scale the sparse threshold by 1/`n_batches`
-  (`eval.hpp:1129`, `cck.ipp:1601-1645`). Bigger, needs the sliced-trange SUMMA path (already
-  in `cd53bd3`); a generator/backend project. This is the memory fix, independent of (a).
+- **(b) Hexane memory wall → aux-Κ batching — DONE (memory).** Implemented as
+  `src/aux_k_batching.h` (`SPTC_AUX_TARGET_SIZE`): streams Κ in tile-aligned slices over the
+  *persistent* DF terms, sums partials, scales the sparse threshold by 1/`n_batches` (mirroring
+  `cck.ipp:1601-1645`), on the sliced-trange SUMMA path already in `cd53bd3`. Validated
+  transparent (checksums agree to 10–13 sig figs) with peak RSS −43…−63% (Stage 10). With
+  regenerated complete leaves it lets **repro hexane complete** single-rank (T1 nnz 1785 / 53.8 s,
+  T2 nnz 591501 / 933 s, peak 27.5 GB; `MPQC_COMPARISON.md` §11). The memory fix, independent of (a).
 - **(c) Warm (~2×) → mostly fundamental.** ~7% is recoverable with `SPTC_TILES_PER_DIM=6`
   (the warm tiling optimum); the rest is distributed across ~250 small ragged-ToT ops with no
   single-op lever — the intrinsic cost of the flattened static sequence vs the runtime

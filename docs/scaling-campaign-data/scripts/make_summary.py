@@ -56,10 +56,18 @@ for m in MOLS:
     if any(c!="-" for c in cells): out.append(f"| {m} | "+" | ".join(cells)+f" | {sp} |")
 
 out+=["","## Findings",
-      "- Warm (steady-state) repro ~ MPQC warm (C2H6 1.3x); warm barely rank-scales (work too small).",
-      "- Cold gap (~10x np1) is one DF half-transform; multi-rank scales it (C2H6 5.4x over 16 ranks).",
-      "- proto=100 generator extent avoids the giant intermediate (3x cold np1) but t-dep value differs ~7% (correctness open).",
+      "- Warm (steady-state) repro ≈ MPQC warm only for small molecules: warm ratio(np1) grows",
+      "  C2H6 0.77x (repro faster) → C3H8 1.27x → C4H10 1.69x → C5H12 2.91x. (ratio = repro/MPQC.)",
+      "  Warm barely rank-scales (work too small).",
+      "- Two distinct 'cold' magnitudes — keep separate: (a) the shipped proto45/TPD=8 DF-half-transform",
+      "  config (comparison.csv: repro ~80s / MPQC 7.7s = ~10x np1, ~5.4x over 16 ranks); (b) the §11",
+      "  whole-residual grid below (results.csv: repro cold np1 12.2s / MPQC 7.7s = ~1.6x). ~10x is (a), not (b).",
+      "- proto=100 generator extent avoids the giant intermediate (3x cold np1) but the t-dep value differs",
+      "  (MPQC_COMPARISON.md §11 reports ~0.2% cc-pVTZ order-sensitivity; the earlier ~7% is superseded).",
       "- Same TiledArray fork cd53bd3 + same SeQuant derivation both sides; difference is evaluation/tiling.",
-      "- Hexane single-rank MPQC OOMs (63GB) — needs multi-rank; repro uses alkanes-v3 hexane leaves."]
-open(W+"/SUMMARY.md","w").write("\n".join(out)+"\n")
-print("SUMMARY.md regenerated")
+      "- Hexane single-rank MPQC OOMs unbatched (63GB); with aux-Κ batching both MPQC and the repro",
+      "  complete hexane single-rank (repro T2 933s, peak 27.5GB — see MPQC_COMPARISON.md §11)."]
+import sys
+dest = sys.argv[1] if len(sys.argv) > 1 else W+"/SUMMARY.md"
+open(dest,"w").write("\n".join(out)+"\n")
+print(f"SUMMARY.md regenerated -> {dest}")
