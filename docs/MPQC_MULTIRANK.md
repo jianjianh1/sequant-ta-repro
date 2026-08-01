@@ -84,11 +84,41 @@ the giant μ̃Κ half-transform is load-balanced across ranks *for free*. The re
 generated einsum over self-built tilings with TA's default pmap. Matching this is a generator/evaluator
 change, not a knob.
 
+## 5b. Direct per-rank measurement — the SUMMA is balanced (load-balance lever REFUTED)
+
+The one input-side lever not yet *measured* (only predicted futile) was rank load-balance. Measured
+directly (2026-08-01): C3H8, np=16 oversubscribed on node3 (per-rank work is ProcGrid-determined =
+node-count-independent), owning-ToT, `TA_EINSUM_INSTRUMENT=1` with per-rank stderr. The top op — 488,
+the μ̃Κ ToT×ToT `…μ̃,Κ;a * …μ̃;a -> …Κ;a,a` — runs in **12.5-13.1 s on every one of the 16 ranks** (8 at
+12.5, 8 at 13.1; total einsum `local_kernel` ~127-130 s/rank). **No rank is idle.**
+
+So the 3/16 storage-idle in `pmap_distribution_C4H10_np16.txt` (BlockedPmap on operands) does **not**
+become SUMMA-compute idle. Source mechanism (confirmed): op 488's result is default-constructed
+(`einsum/tiledarray.h:663-668`) → einsum synthesizes a ProcGrid and owns result tiles via
+`CyclicPmap(M,N,proc_rows,proc_cols)` (`cont_engine.h:906-917`, `cyclic_pmap.h:123-137`), which
+**scatters** the contiguous frozen-core leading zeros across ranks (`col % proc_cols`) — the opposite of
+the BlockedPmap storage clustering. Zero result tiles cost their owner no compute
+(`contraction_eval.h:1286-1289,1509`), and the surplus procs are absorbed onto the replicated slab (occ-
+pair) axis (`proc_h`). **The load-balance lever is refuted by measurement — there is no starvation to
+fix; the input tiling/pmap/occ-reorder family is closed.**
+
+**New lead (not the load-balance lever): `entry_fence` = 27.4%** of einsum-region time in this run — the
+per-einsum global entry fence (`einsum/tiledarray.h:525`) across the **252-op static generated sequence**.
+That is a serialization/synchronization cost per op that grows with rank count, and it is precisely what
+MPQC's **runtime dataflow evaluator** (no fence between ops) avoids. It is the most concrete remaining
+candidate for the scaling term — but confirming it as *the* bottleneck needs a real multi-node run
+(oversubscription inflates fence-wait), and removing it is a driver/evaluator change (fenceless chaining
+of the generated einsums), not a tiling knob. Logged for a future evaluator effort.
+
 ## 6. Verdict
 
 The multi-rank gap is dominated by the scaling term, which grows with molecule size. It is **not**
 the backend (PaRSEC refuted, backend-neutral), **not** the operand pmap (einsum discards it), **not**
-per-op compute (the scale-GEMM, the one new per-op lever, actively hurts at multi-rank). It is MPQC's
-runtime evaluation + solver-inherited balanced layout. **Overnight-closable: no.** The path forward is
-to reproduce that evaluation (coalescing + up-front balanced layout upstream of einsum) — a substantial
+per-op compute (the scale-GEMM, the one new per-op lever, actively hurts at multi-rank), and **not
+rank load-balance in the μ̃Κ SUMMA** (§5b: measured balanced across all 16 ranks — the last input-side
+lever, now closed by measurement rather than inference). The most concrete *remaining* candidate is the
+per-einsum `entry_fence` (§5b) — the 252-op static sequence's per-op global synchronization vs MPQC's
+fenceless dataflow evaluator — which points, again, at the **runtime evaluator** as the lever, plus the
+solver-inherited layout. **Overnight-closable: no.** The path forward is to reproduce that evaluation
+(fenceless dataflow chaining + coalescing + up-front balanced layout upstream of einsum) — a substantial
 generator/backend project, explicitly out of this scope.
