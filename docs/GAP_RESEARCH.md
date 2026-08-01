@@ -5,6 +5,19 @@ uncommitted "~87% is op 487 / ~100× off peak / per-outer-cell task overhead" pr
 (flagged in `FACT_CHECK.md`) with measured, checksum-gated numbers. Supporting artifacts:
 `scaling-campaign-data/gap_profile.txt`, `gap_ceiling.csv`, `gap_decomposition.csv`.*
 
+> **CORRECTION (2026-07-31, measured — see `MPQC_ABLATION.md`).** Two central claims below were
+> reached by *source-reading* and are **refuted by directly profiling MPQC and ablating its features**:
+> (1) "MPQC hits the same thread-starved skinny-GEMM kernel" — **false**: MPQC's cold residual is
+> **BLAS-bound** (44–53% dgemm, ~3% sync) where the repro's is thread-starved (6–8% dgemm, ~60% sync).
+> The single-node gap is in **how MPQC executes the residual** — not a shared ceiling, not the inner-tile
+> layout, not the backend (MPQC-Pthreads single-node ≈ MPQC-PaRSEC). (A later pass, `MPQC_RUNTIME.md`,
+> pins it to ~10× lower per-GEMM execution overhead / single-thread speed from MPQC's array
+> construction — *not* the evaluator caller, which is concurrency-equivalent to the repro's static einsum.) (2) "PaRSEC is the one multi-node lever that matters" —
+> **overstated**: MPQC-Pthreads scales ~6×/8 ranks, nearly as well as MPQC-PaRSEC (~1.1× apart), so the
+> repro's poor scaling is *also* its static evaluator, not the Pthreads backend. The analysis below is
+> retained for its ceiling/skinny-GEMM math (still valid), but its MPQC-parity and PaRSEC-lever
+> conclusions are superseded by `MPQC_ABLATION.md`.
+
 ## Headline
 
 The remaining repro-vs-MPQC gap is **cold time** (~4.5–5.5× at cc-pVTZ / np=16, `MPQC_COMPARISON.md`
