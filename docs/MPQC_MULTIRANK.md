@@ -102,13 +102,24 @@ the BlockedPmap storage clustering. Zero result tiles cost their owner no comput
 pair) axis (`proc_h`). **The load-balance lever is refuted by measurement — there is no starvation to
 fix; the input tiling/pmap/occ-reorder family is closed.**
 
-**New lead (not the load-balance lever): `entry_fence` = 27.4%** of einsum-region time in this run — the
-per-einsum global entry fence (`einsum/tiledarray.h:525`) across the **252-op static generated sequence**.
-That is a serialization/synchronization cost per op that grows with rank count, and it is precisely what
-MPQC's **runtime dataflow evaluator** (no fence between ops) avoids. It is the most concrete remaining
-candidate for the scaling term — but confirming it as *the* bottleneck needs a real multi-node run
-(oversubscription inflates fence-wait), and removing it is a driver/evaluator change (fenceless chaining
-of the generated einsums), not a tiling knob. Logged for a future evaluator effort.
+**Secondary lead — `entry_fence` (the per-einsum global fence, `einsum/tiledarray.h:525`, across the
+252-op static generated sequence). Measured at real np (C3H8 cold):**
+
+| np | entry_fence (% of einsum-region) | whole-T2 wall | ≈ % of whole T2 |
+|---|---|---|---|
+| 1  | 18.5% (5.76 s) | ~187 s | ~3% |
+| 4  | 16.4-16.9%      | 47.8 s | ~9% |
+| 8  | 17.5-18.5% (one 24.2%) | 36.7 s | ~10% |
+| 16 | 27.4% (oversubscribed — inflated) | — | — |
+
+So it is a **real per-op cost** (~17% of einsum-region, roughly constant across np — present already at
+np=1/8thr, i.e. a threadpool barrier between ops, not a pure network effect), and as a fraction of the
+shrinking whole-T2 wall it **grows with np** (~3% → ~10% at np8) — a genuine but **modest** scaling
+contributor (~1.1× at np8), **not the dominant scaling term**. It is the concrete "static-sequence per-op
+fences vs MPQC's fenceless dataflow evaluator" cost, now quantified. Removing it (chain the generated
+einsums through futures instead of fencing each) is a driver/evaluator change with a modest (~1.1-1.2×,
+np-growing) payoff — logged for a future evaluator effort, but it does not close the 4-5× gap; the
+dominant scaling term remains the runtime evaluator's work-coalescing.
 
 ## 6. Verdict
 
