@@ -272,6 +272,13 @@ Env-gated knobs leave defaults untouched when unset:
 
 ## 11. Scaling across molecules and ranks (alkanes C₂H₆–C₆H₁₄, nodes 16–31)
 
+> **See also `MPQC_MULTIRANK.md` (2026-08-01)** — characterizes *why* the multi-rank
+> gap persists: it is the scaling term (grows with size, 3.25× at C₅H₁₂), attributed to
+> MPQC's runtime evaluator + solver-inherited layout; every backend/pmap-knob lever is
+> refuted, and the single-node `SPTC_SCALE_GEMM` win does **not** transfer to multi-rank
+> (the distributed SUMMA shrinks its GEMMs). Verdict: not overnight-closable. The §11
+> tables below are current (clang/OpenBLAS owning — not toolchain-stale).
+
 The ethane parity study (§1–10) is one point. This section extends it to the
 linear-alkane series **C₂H₆, C₃H₈, C₄H₁₀, C₅H₁₂** (cc-pVTZ / cc-pVTZ-RI, the
 `jianjianh1/mpqc-alkanes-v3` dataset) with a **rank sweep np ∈ {1,4,8,16}, one MPI

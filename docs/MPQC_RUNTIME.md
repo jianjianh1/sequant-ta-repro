@@ -144,3 +144,97 @@ each strided-DGEMM carries less per-cell machinery. That is a structural change 
 the dominant overhead is inner-cell compaction, the `trange` tile structure, or the arena-cell task
 machinery is narrowed but not fully isolated — pinning it exactly would need MADNESS task-level
 tracing via a compile-time `TA_TRACE_TASKS` rebuild.)
+
+## Array-construction overhead — pinned (2026-08-01)
+
+A cheap 1-thread pass (existing binaries, no builds) isolates *which* array-construction cost is the
+~10× per-GEMM overhead. At 1 thread there is no idle-thread `ConditionVariable::wait` to mask it, so
+the flat self-time symbols of the isolated giant op (`gap_microbench`, owning = the repro's shipped
+ToT tile type) show the construction directly:
+
+| category | ~% of 1-thread wall (load-excluded) | dominant symbols |
+|---|---|---|
+| per-inner-cell dispatch + construction | **~53%** | `std::_Function_handler<…Tensor<double>…>` 37% (one op per inner cell, ~170k cells), `arena_tot_grow_inplace`, `ContractionArenaPlan`, `transpose`, `arena_outer_init`, vector/emplace churn, malloc/free/memset ~6% |
+| actual GEMM | **~19%** | `dgemm_kernel_HASWELL` + copies |
+
+So **construction/dispatch is ~2.7× the actual GEMM.** And it is **per-cell, not per-tile**: sweeping
+`TILES_PER_DIM` 4/8/16 barely moves the 1-thread time (54.6 / 53.7 / 60.8 s), consistent with the
+ablation finding that tiling knobs don't close the gap.
+
+**The mechanism:** the repro's owning ToT issues a `std::function`-wrapped operation **per tiny inner
+cell**; MPQC's compacted-arena strided-DGEMM (`mbpt/csv.ipp:51-64` `compact_csv_coeffs` +
+`arena_einsum.h` ce+e fast path) **batches** all cells of a contracted run into ONE BLAS call over a
+single-page constant-stride arena — no per-cell dispatch, no per-tile arena rebuild. The repro's arena
+build never compacts, and the repro switched to owning anyway (arena multi-rank segfault, §11).
+
+**Verdict for reproducing MPQC's array construction:** the lever is **cell-batching / compaction**
+(batch the per-pair PNO inner cells into a single strided BLAS call, as MPQC does), **not** fewer/bigger
+outer tiles. Concretely that means porting `compact_csv_coeffs` and keeping the strided-DGEMM ce+e fast
+path over an owning-stable arena (or teaching the owning ToT to batch its per-cell ops). Both are
+TA-level changes entangled with the arena multi-rank segfault the repro abandoned arena for — feasible
+but non-trivial, and the definitive next prototype if the gap is worth closing in-repo. Tuning knobs
+(tiling, pmap), the evaluator, and the backend are all confirmed *not* the lever.
+
+## Does the arena build already close it? — no (2026-08-01)
+
+The pinned lever above suggested the repro's *arena* build (which batches cells into strided DGEMMs,
+unlike the shipped owning build) might already close the single-node gap. A direct arena-vs-owning
+comparison (existing binaries, checksum-matched, C2H6 cold T2) settles it. **All three sides were
+re-measured with BLAS pinned to 1 thread and single-core execution CPU-verified** (see the
+thread-fairness box below — the first-pass numbers had the repro's OpenBLAS unpinned while MPQC's was
+pinned, an apples-to-oranges bias now removed):
+
+| | arena (`build-cd53bd3`) | owning (`build-owning`, shipped) | MPQC |
+|---|---|---|---|
+| 8 threads (BLAS-pinned) | 9.42 s (1.21×) | 11.05 s (1.42×) | 7.8 s |
+| 1 thread (BLAS-pinned)  | 54.2 s (6.2×)  | 47.9 s (5.5×)   | 8.75 s |
+
+**At 1 thread, arena ≈ owning (~48–54 s; if anything owning is *faster*), both ~6× MPQC.** So the
+batching does **not** help single-thread — the tile type is *not* the single-thread lever. The ~6×
+single-thread gap is the **array construction** itself (`src/ta_builder.h build_tot_array`), common to
+*both* tile types, vs MPQC's up-front-shaped + compacted, registry-tiled CSV-solver arrays. (This
+refines the "per-cell dispatch" reading: owning pays a `std::function` per cell; arena avoids that
+specific cost but carries equivalent `arena_outer_init` / multi-page construction overhead — net the
+same 1-thread time.)
+
+At 8 threads arena is ~15% faster than owning (9.42 vs 11.05 s; 1.21× vs 1.42× MPQC) because it
+parallelizes slightly better — arena is usable single-node (an earlier 282 s reading was a transient
+fluke). The repro ships owning only for **multi-rank** stability (the np≥8 arena lazy-deletion
+segfault), not single-node speed.
+
+### Thread-fairness verification (2026-08-01) — is MPQC's fast number *really* single-threaded?
+
+MPQC links multithreaded OpenBLAS, so `MAD_NUM_THREADS=1` alone would not stop its DGEMMs from
+grabbing cores. To rule out that MPQC's edge is hidden BLAS threading, each side was run at
+`MAD_NUM_THREADS=1` under two BLAS configs — fully pinned (`OMP=OPENBLAS=MKL=1`) vs BLAS-unpinned —
+while sampling the compute process's instantaneous CPU% (utime+stime over all threads) every 0.4 s:
+
+| 1-thread run | cold T2 | residual CPU% (median / max) | peak threads |
+|---|---|---|---|
+| MPQC pinned    | 8.75 s | 108 / **112**  | 3  |
+| MPQC blasfree  | 11.42 s| 108 / **222**  | 4  |
+| arena pinned   | 54.2 s | 108 / **112**  | 3  |
+| arena blasfree | 52.9 s | 110 / **1932** | 18 |
+| owning pinned  | 47.9 s | 108 / **115**  | 3  |
+| owning blasfree| 47.9 s | 110 / **2060** | 18 |
+
+Two facts fall out. **(1) MPQC's fast single-thread number is genuinely single-core**: pinned it holds
+at 108–112% CPU (one core plus a sliver of infra thread), and *unpinning* BLAS makes it **slower**
+(11.4 s, CPU to 222%) — the per-pair GEMMs are too tiny to amortize thread spawn/sync, so multi-core
+BLAS is counterproductive. The historical 8.26 s (run with `OMP_NUM_THREADS=1`) ≈ the pinned 8.75 s, so
+it was already clean. **(2) The repro's ~50 s is likewise not a pinning artifact**: pinned ≈ blasfree
+(the unpinned runs *do* fan BLAS out to ~19 cores, CPU spiking to ~2000%, yet wall time barely moves) —
+direct proof the bottleneck is construction/dispatch, not GEMM compute. The ~6× single-thread gap
+survives a strictly apples-to-apples, CPU-verified single-core comparison. At 8 threads, unpinned BLAS
+*over*subscribes (25 threads on 16 cores) and hurts the repro, so the earlier blasfree 8-thread numbers
+(arena 10.2 / owning 12.8) were pessimistic; BLAS-pinned they improve to 9.42 / 11.05.
+
+**Final verdict:** switching to the arena build buys ~15% single-node but does **not** close the gap
+(1.21–1.42× at 8 threads, ~6× at 1 thread — all BLAS-pinned and single-core-verified). Neither tile
+type, nor compaction (which only rescues the arena path's minority multi-page runs and can't help the
+tile-invariant 1-thread gap), nor any knob, nor hidden thread count is the lever. The single-node gap
+is MPQC's **array-construction approach** — a substantial rewrite of `build_tot_array` to shape ToT
+arrays up front and compact them the way the CSV solver does — not a cheap in-repo change. This closes
+the "reproduce the runtime" line of investigation: the gap is real, measured fairly, its lever is
+precisely located (array construction, single-thread), and closing it is a construction-rewrite
+project, consistent with every prior round's "not cheaply closable in-repo."
