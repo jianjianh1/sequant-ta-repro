@@ -1,0 +1,182 @@
+--- /tmp/pristine_tensor_arena_einsum.h	2026-08-01 06:43:16.163215588 -0600
++++ third_party/tiledarray-cd53bd3-clang/install/include/TiledArray/tensor/arena_einsum.h	2026-08-01 06:19:15.416200845 -0600
+@@ -564,6 +564,28 @@
+ inline std::atomic<std::uint64_t> g_fall_flops_ce_e{0};
+ inline std::atomic<std::uint64_t> g_fall_flops_ce_ce{0};
+ 
++// Per-cell fused-scale (Hadamard scalar*ToT) accounting — the dominant
++// single-thread cost in the repro (fused_scale_t_x_tot_inplace). Gated by
++// TA_GEMM_TIMING; counts per-inner-cell invocations + total streamed elements
++// so we can tell "one huge term" from "many small terms".
++inline std::atomic<std::uint64_t> g_scale_txtot_calls{0};
++inline std::atomic<std::uint64_t> g_scale_txtot_elems{0};
++inline std::atomic<std::uint64_t> g_scale_txtot_maxelems{0};
++inline std::atomic<std::uint64_t> g_scale_totxt_calls{0};
++inline std::atomic<std::uint64_t> g_scale_totxt_elems{0};
++inline void scale_count(std::atomic<std::uint64_t>& calls,
++                        std::atomic<std::uint64_t>& elems, std::size_t n,
++                        std::atomic<std::uint64_t>* maxe = nullptr) {
++  if (!gemm_timing_enabled()) return;
++  calls.fetch_add(1, std::memory_order_relaxed);
++  elems.fetch_add(n, std::memory_order_relaxed);
++  if (maxe) {
++    auto cur = maxe->load(std::memory_order_relaxed);
++    while (n > cur && !maxe->compare_exchange_weak(cur, n)) {
++    }
++  }
++}
++
+ /// Dumps the per-regime GEMM-time totals at process exit when TA_GEMM_TIMING
+ /// is set. The single inline instance is constructed after <iostream>'s static
+ /// init, hence destroyed before std::cerr.
+@@ -607,6 +629,18 @@
+     dump_phases("ce+ce", L(g_kernel_ns_ce_ce), ce_ce, L(g_check_ns_ce_ce),
+                 L(g_fallback_ns_ce_ce));
+ 
++    // ---- per-cell fused-scale (Hadamard scalar*ToT) volume ----
++    {
++      const auto txc = L(g_scale_txtot_calls), txe = L(g_scale_txtot_elems),
++                 txm = L(g_scale_txtot_maxelems);
++      const auto ttc = L(g_scale_totxt_calls), tte = L(g_scale_totxt_elems);
++      std::cerr << "[scale-fused] t_x_tot (scalar*ToT, ToT-right): " << txc
++                << " cell-calls, " << (txe / 1e6) << "M elems streamed, max cell="
++                << txm << " elems\n";
++      std::cerr << "[scale-fused] tot_x_t (ToT*scalar, ToT-left) : " << ttc
++                << " cell-calls, " << (tte / 1e6) << "M elems streamed\n";
++    }
++
+     // ---- shape histograms (return clean strided-GEMM FLOPs per regime) ----
+     const double clean_flops_e = dump_shapes("ce+e", g_ce_e_shapes);
+     const double clean_flops_ce = dump_shapes("ce+ce", g_ce_ce_shapes);
+@@ -1134,6 +1168,7 @@
+                                  const Scalar& s) {
+   if (left.empty()) return;
+   TA_ASSERT(!result.empty());
++  scale_count(g_scale_totxt_calls, g_scale_totxt_elems, left.size());
+   inplace_tensor_op(
+       [s](typename Result::value_type& MADNESS_RESTRICT r,
+           const typename Left::value_type& MADNESS_RESTRICT l) { r += l * s; },
+@@ -1146,6 +1181,8 @@
+                                  const Right& right) {
+   if (right.empty()) return;
+   TA_ASSERT(!result.empty());
++  scale_count(g_scale_txtot_calls, g_scale_txtot_elems, right.size(),
++              &g_scale_txtot_maxelems);
+   inplace_tensor_op(
+       [s](typename Result::value_type& MADNESS_RESTRICT r,
+           const typename Right::value_type& MADNESS_RESTRICT rr) {
+@@ -1154,6 +1191,114 @@
+       result, right);
+ }
+ 
++/// Env gate (SPTC_SCALE_GEMM=1) for the batched scale-GEMM path. Default off, so
++/// the per-cell fused_scale path is unchanged.
++inline bool scale_gemm_enabled() {
++  static const bool v = [] {
++    const char* e = std::getenv("SPTC_SCALE_GEMM");
++    return e && std::atoi(e) != 0;
++  }();
++  return v;
++}
++
++/// Batched scale strided op (inner BROADCAST, outer contraction) — the MPQC
++/// per-pair GEMM form of the μ̃Κ half-transform (generated_t2:487). Computes
++///   C[m,n](a) += factor · Σ_k L[m,k] · R[k,n](a)
++/// where L is a FLAT tile of scalars ([M×K], no inner mode) and R,result are
++/// arena-view ToT (inner a). For each right-external n (an occupied pair),
++/// gathers R[k,n]'s inner a-vectors over the contracted k into a dense [K×Q]
++/// matrix and issues ONE GEMM  tmp[M×Q] = L[M×K]·Rmat[K×Q], then adds tmp rows
++/// into the result cells — replacing K·M per-cell scalar AXPYs with one GEMM per
++/// pair. A non-uniform-Q pair drops to the correct per-cell AXPY.
++template <typename ResultOuter, typename LeftFlat, typename RightOuter>
++void arena_strided_scale(ResultOuter& C, const LeftFlat& L, const RightOuter& R,
++                         std::size_t M, std::size_t N, std::size_t K,
++                         math::blas::Op left_op, math::blas::Op right_op,
++                         double factor) {
++  namespace blas = TiledArray::math::blas;
++  using integer = blas::integer;
++  static_assert(is_tensor_view_v<typename ResultOuter::value_type> &&
++                    is_tensor_view_v<typename RightOuter::value_type>,
++                "arena_strided_scale: result/right must be arena (view) ToT");
++  if (M == 0 || N == 0 || K == 0) return;
++  const std::size_t nbatch = static_cast<std::size_t>(C.nbatch());
++  if (nbatch == 0) return;
++  ScopedPhaseTimer _kernel_timer(g_kernel_ns_ce_e);
++  const double* Ld = L.data();  // FLAT: M*K doubles per batch, no inner cells
++  const auto* rc = R.data();
++  auto* cc = C.data();
++  const std::size_t lda = (left_op == blas::NoTranspose) ? K : M;
++  auto l_off = [&](std::size_t m, std::size_t k) {
++    return (left_op == blas::NoTranspose) ? m * lda + k : k * lda + m;
++  };
++  const std::size_t ldb_o = (right_op == blas::NoTranspose) ? N : K;
++  auto r_off = [&](std::size_t k, std::size_t n) {
++    return (right_op == blas::NoTranspose) ? k * ldb_o + n : n * ldb_o + k;
++  };
++  thread_local std::vector<double> Rmat, tmp;  // reused across calls (per thread)
++  for (std::size_t b = 0; b < nbatch; ++b) {
++    const std::size_t cbase = b * M * N;
++    const std::size_t lbase = b * M * K;
++    const std::size_t rbase = b * K * N;
++    for (std::size_t n = 0; n < N; ++n) {
++      long Q = -1;
++      bool uniform = true;
++      for (std::size_t k = 0; k < K; ++k) {
++        const auto& rk = rc[rbase + r_off(k, n)];
++        if (!rk) continue;
++        const long q = static_cast<long>(rk.size());
++        if (Q < 0)
++          Q = q;
++        else if (q != Q) {
++          uniform = false;
++          break;
++        }
++      }
++      if (Q <= 0) continue;  // no present operand cells for this pair
++      if (uniform) {
++        Rmat.assign(static_cast<std::size_t>(K) * Q, 0.0);  // zero absent-k rows
++        for (std::size_t k = 0; k < K; ++k) {
++          const auto& rk = rc[rbase + r_off(k, n)];
++          if (rk) std::copy_n(rk.data(), Q, Rmat.data() + k * Q);
++        }
++        tmp.resize(static_cast<std::size_t>(M) * Q);  // gemm beta=0 overwrites
++        {
++          ScopedShapedGemmTimer _gt(g_gemm_ns_ce_e, g_gemm_calls_ce_e,
++                                    g_ce_e_shapes, M, Q, K);
++          // L is a dense flat [M×K] (or [K×M]) tile: feed it straight to BLAS
++          // with its own orientation — no per-call copy.
++          blas::gemm(left_op, blas::NoTranspose, static_cast<integer>(M),
++                     static_cast<integer>(Q), static_cast<integer>(K), 1.0,
++                     Ld + lbase, static_cast<integer>(lda), Rmat.data(),
++                     static_cast<integer>(Q), 0.0, tmp.data(),
++                     static_cast<integer>(Q));
++        }
++        for (std::size_t m = 0; m < M; ++m) {
++          auto& Cc = cc[cbase + m * N + n];
++          if (!Cc || static_cast<long>(Cc.size()) != Q) continue;
++          double* c = Cc.data();
++          const double* t = tmp.data() + m * Q;
++          for (long a = 0; a < Q; ++a) c[a] += factor * t[a];
++        }
++      } else {
++        for (std::size_t m = 0; m < M; ++m) {
++          auto& Cc = cc[cbase + m * N + n];
++          if (!Cc) continue;
++          const long Ql = static_cast<long>(Cc.size());
++          double* c = Cc.data();
++          for (std::size_t k = 0; k < K; ++k) {
++            const auto& rk = rc[rbase + r_off(k, n)];
++            if (!rk || static_cast<long>(rk.size()) != Ql) continue;
++            const double s = factor * Ld[lbase + l_off(m, k)];
++            const double* rr = rk.data();
++            for (long a = 0; a < Ql; ++a) c[a] += s * rr[a];
++          }
++        }
++      }
++    }
++  }
++}
++
+ #ifdef TA_STRIDED_DGEMM_COUNT
+ inline std::atomic<std::size_t> g_strided_dgemm_ce_e_calls{0};
+ #endif

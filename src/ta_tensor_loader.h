@@ -15,12 +15,37 @@
 #include <iostream>
 #include <string>
 
+#include <TiledArray/conversions/foreach.h>
+#include <TiledArray/tensor/arena_kernels.h>
+
 #include "coo_loader.h"
 #include "ta_builder.h"
 #include "ta_stage.h"
 #include "ta_tensors.h"
 
 namespace fs = std::filesystem;
+
+/// Port of MPQC's compact_csv_coeffs (mpqc4 mbpt/csv.ipp:44-64): coalesce each
+/// ToT coefficient tile into ONE contiguous, single-page, constant-stride arena
+/// slab. That is the layout the strided-DGEMM fast path (arena_einsum.h
+/// arena_strided_dgemm_ce_e/ce_ce) requires to issue one BLAS call per k-run
+/// instead of a per-inner-cell fallback. Incrementally-built (uncompacted) ToT
+/// tiles span multiple arena pages with non-constant inter-cell stride and so
+/// never take the fast path -- this is the single-thread lever MPQC has and the
+/// repro lacked. No-op unless the inner cells are arena views (i.e. the default
+/// arena build; compiled out for owning ToT). Runtime-gated by
+/// SPTC_COMPACT_COEFFS=1 so one binary can A/B compaction on/off.
+inline void compact_tot_coeffs(ArrayToT& a) {
+  using Tile = typename ArrayToT::value_type;
+  using Inner = typename Tile::value_type;
+  if constexpr (TA::is_tensor_view_v<Inner>) {
+    if (!a.is_initialized()) return;
+    TA::foreach_inplace(a, [](Tile& tile) {
+      tile = TA::detail::arena_compact<Tile>(tile);
+      return tile.norm();
+    });
+  }
+}
 
 // Emit one synthetic LOAD row to mark per-(mol, np) tensor-load cost. Lives
 // outside the trial/equation loops so per-eq aggregators ignore it via the
@@ -101,6 +126,19 @@ inline TATensors load_ta_tensors(TA::World& world, const std::string& dir) {
   ts.t_i_a_tot = load_one_tot(world, dir + "/t_i_1_a_1.txt", 1, 1, 1, "t_i_a_tot");
   ts.t_i_i_a_a_tot =
       load_one_tot(world, dir + "/t_i_1_i_2_a_1_a_2.txt", 2, 2, 2, "t_i_i_a_a_tot");
+
+  // MPQC-parity: compact the ToT coefficient/amplitude arrays to single-page
+  // constant-stride so the strided-DGEMM fast path fires (see compact_tot_coeffs
+  // above). Gated by SPTC_COMPACT_COEFFS=1; no-op for owning ToT.
+  if (const char* v = std::getenv("SPTC_COMPACT_COEFFS"); v && std::atoi(v)) {
+    compact_tot_coeffs(ts.c1_tot);
+    compact_tot_coeffs(ts.c2_tot);
+    compact_tot_coeffs(ts.t_i_a_tot);
+    compact_tot_coeffs(ts.t_i_i_a_a_tot);
+    if (world.rank() == 0)
+      std::cerr << "  [compact] ToT coefficient arrays compacted "
+                   "(SPTC_COMPACT_COEFFS=1)\n";
+  }
 
   world.gop.fence();
   auto t1 = std::chrono::high_resolution_clock::now();

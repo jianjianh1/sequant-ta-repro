@@ -1,0 +1,72 @@
+--- /tmp/pristine_expressions_cont_engine.h	2026-08-01 06:43:16.195215993 -0600
++++ third_party/tiledarray-cd53bd3-clang/install/include/TiledArray/expressions/cont_engine.h	2026-08-01 05:35:27.588707636 -0600
+@@ -170,6 +170,12 @@
+                                                 ///< rides an outer loop.
+                                                 ///< Mutually exclusive with the
+                                                 ///< ce_e and ce_ce_right ops.
++  std::function<void(result_tile_type&, const left_tile_type&,
++                     const right_tile_type&, const math::GemmHelper&)>
++      arena_strided_scale_tile_op_;  ///< whole-tile batched scale-GEMM op
++                                     ///< (flat left × arena ToT, inner
++                                     ///< BROADCAST under an outer contraction);
++                                     ///< SPTC_SCALE_GEMM-gated; null otherwise
+   using arena_plan_storage_t =
+       TiledArray::detail::arena_plan_storage_t<result_tile_type, left_tile_type,
+                                                right_tile_type>;
+@@ -409,6 +415,8 @@
+           if (this->arena_strided_dgemm_ce_ce_left_tile_op_)
+             op_.set_strided_oprod_op(
+                 this->arena_strided_dgemm_ce_ce_left_tile_op_);
++          if (this->arena_strided_scale_tile_op_)
++            op_.set_strided_oprod_op(this->arena_strided_scale_tile_op_);
+         }
+         // Plan ownership transferred to op_; mark carrier slot empty so any
+         // later use of arena_plan_ reads as "no plan" rather than moved-from.
+@@ -468,6 +476,8 @@
+           if (this->arena_strided_dgemm_ce_ce_left_tile_op_)
+             op_.set_strided_oprod_op(
+                 this->arena_strided_dgemm_ce_ce_left_tile_op_);
++          if (this->arena_strided_scale_tile_op_)
++            op_.set_strided_oprod_op(this->arena_strided_scale_tile_op_);
+         }
+         // Plan ownership transferred to op_; mark carrier slot empty so any
+         // later use of arena_plan_ reads as "no plan" rather than moved-from.
+@@ -730,6 +740,8 @@
+             this->arena_strided_dgemm_ce_ce_right_tile_op_);
+       if (this->arena_strided_dgemm_ce_ce_left_tile_op_)
+         op_.set_strided_oprod_op(this->arena_strided_dgemm_ce_ce_left_tile_op_);
++      if (this->arena_strided_scale_tile_op_)
++        op_.set_strided_oprod_op(this->arena_strided_scale_tile_op_);
+       // Plan ownership transferred to op_; mark carrier slot empty so any
+       // later use of arena_plan_ reads as "no plan" rather than moved-from.
+       if constexpr (!std::is_same_v<arena_plan_storage_t, std::monostate>) {
+@@ -1912,6 +1924,29 @@
+                     TiledArray::detail::make_fused_scale_t_x_tot_lambda<
+                         result_tile_element_type, left_tile_element_type,
+                         right_tile_element_type>();
++              // Batched scale-GEMM strided op (SPTC_SCALE_GEMM): for the
++              // flat×ToT t_x_tot case under an outer contraction, batch the
++              // per-cell scalar AXPYs into one GEMM per occupied pair (the MPQC
++              // per-pair GEMM form of the μ̃Κ half-transform). factor==1 here,
++              // matching the arena_plan gate above.
++              if constexpr (t_x_tot) {
++                if (TiledArray::detail::scale_gemm_enabled()) {
++                  this->arena_strided_scale_tile_op_ =
++                      [](result_tile_type& Cc, const left_tile_type& Lt,
++                         const right_tile_type& Rt,
++                         const math::GemmHelper& gh) {
++                        using integer = TiledArray::math::blas::integer;
++                        integer M, N, K;
++                        gh.compute_matrix_sizes(M, N, K, Lt.range(),
++                                                Rt.range());
++                        TiledArray::detail::arena_strided_scale(
++                            Cc, Lt, Rt, static_cast<std::size_t>(M),
++                            static_cast<std::size_t>(N),
++                            static_cast<std::size_t>(K), gh.left_op(),
++                            gh.right_op(), 1.0);
++                      };
++                }
++              }
+             } else {
+               this->element_nonreturn_op_ = fallback_op;
+             }
