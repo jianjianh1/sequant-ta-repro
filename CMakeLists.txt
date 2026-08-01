@@ -73,6 +73,39 @@ if(tiledarray_FOUND)
             PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools")
         target_compile_definitions(gap_microbench PRIVATE SPTC_OWNING_TOT)
     endif()
+
+    # Runtime-evaluator variant: computes the T2 residual via sequant::evaluate()
+    # over the L2 forest (MPQC's runtime path) instead of the static generated
+    # einsum sequence — the definitive control (docs/MPQC_MULTIRANK.md). Gated
+    # (pulls the SeQuant lib). Owning-ToT is REQUIRED: the evaluator's
+    # cross-thread lazy cleanup dangles arena inner cells.
+    option(SPTC_BUILD_RUNTIME_EVAL "Build the sequant::evaluate() runtime T2 driver" OFF)
+    if(SPTC_BUILD_RUNTIME_EVAL)
+        # Put the SeQuant install prefix + its FetchContent dep build dirs on the
+        # search path so its transitive deps (bundled boost_* configs, Eigen3,
+        # range-v3, libperm, polymorphic_variant, TiledArray) resolve. Eigen3
+        # must be found FIRST so the Eigen3::Eigen target exists when SeQuant's
+        # config references it.
+        set(_SQ_INSTALL "/users/jianjian/sequant-fork/install-eval")
+        set(_SQ_DEPS "/users/jianjian/sequant-fork/build-eval/_deps")
+        list(PREPEND CMAKE_PREFIX_PATH
+            "${_SQ_INSTALL}"
+            "${_SQ_DEPS}/eigen3-build" "${_SQ_DEPS}/range-v3-build"
+            "${_SQ_DEPS}/libperm-build" "${_SQ_DEPS}/polymorphic_variant-build")
+        find_package(Eigen3 CONFIG QUIET)
+        find_package(SeQuant CONFIG QUIET
+            HINTS "${_SQ_INSTALL}/lib/cmake/sequant")
+        if(SeQuant_FOUND)
+            add_executable(ta_runtime_eval_main src/ta_runtime_eval_main.cpp)
+            target_link_libraries(ta_runtime_eval_main PRIVATE
+                tiledarray SeQuant::SeQuant)
+            target_include_directories(ta_runtime_eval_main
+                PRIVATE "${CMAKE_SOURCE_DIR}/src")
+            target_compile_definitions(ta_runtime_eval_main PRIVATE SPTC_OWNING_TOT)
+        else()
+            message(STATUS "SPTC_BUILD_RUNTIME_EVAL=ON but SeQuant not found")
+        endif()
+    endif()
 else()
     message(STATUS "TiledArray not found — run ./setup-tiledarray.sh first")
 endif()
