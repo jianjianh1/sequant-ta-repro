@@ -13,7 +13,8 @@ the static path to **0.2 % in ‖R‖², 0.14 % in max|R|, with exact nnz** on C
 single-rank, single-thread, **50.1 s (runtime) vs 41.0 s (static) = 1.22× slower**. This confirms the
 plan's honest prediction (equal-or-worse): both paths funnel every contraction through the same
 `TA::einsum`, and the runtime evaluator only *adds* per-node `Result`-wrapping + `wait_for_lazy_cleanup`
-drains on top. The remaining sub-percent value gap is a known ToT-coefficient layout detail (below), not a
+drains on top. The residual agrees with the static path to the static's own ~0.2 % intermediate-screening
+tolerance — and the runtime is in fact the screening-free (more complete) result (below); it is not a
 structural error.
 
 ## What it does (verified on C2H6_coo, single rank, `MAD_NUM_THREADS=1`)
@@ -44,15 +45,22 @@ less cancellation-dominated than C2H6's). Wall **226 s vs 192 s = 1.18× slower*
 `‖R‖²` and `max|R|` match to sub-percent with identical nnz — the residual is essentially correct. `Σ Rᵢ`
 is 2.1× off, but that is a ~1e-3 near-total-cancellation quantity (the raw R is strongly antisymmetric:
 symmetrizing collapses ‖R‖² by ~690×, from 0.118 to 1.7e-4), so a ~0.1 % systematic per-element error
-moves it a lot while barely touching ‖R‖². **Not** sparse screening: setting `SPTC_SPARSE_THRESHOLD=0`
-leaves the runtime numbers unchanged (the static path segfaults at 0 — dense-intermediate blowup).
+moves it a lot while barely touching ‖R‖².
 
-**Most likely source of the sub-% gap:** the yielder returns ToT coefficient/amplitude leaves **as-is**
-(as MPQC's `eval_csv` does), but the repo's loader stores `c2_tot`/`t2` in pair order `(i₁,i₂)` while the
-derivation annotates some occurrences `(i₂,i₁)`. MPQC gets away with as-is because its coefficient storage
-already matches the derivation's layout; here the occ pair is transposed on those terms, and the CSV
-coefficient is only *nearly* symmetric under i↔j. Fix = permute ToT leaves to `node->annot()` (as the flat
-leaves already are), handling the `;`-split outer/inner. Untried; expected to close the gap to ~1e-9.
+**Source of the sub-% gap = the static path's intermediate screening (the runtime is the *more* complete
+calculation).** Traced by elimination:
+- *Not the ToT-coefficient layout.* The yielder returns ToT leaves as-is (like MPQC's `eval_csv`);
+  `SPTC_CHECK_SYM` shows `c2_tot` is **exactly** symmetric under the occ swap i↔j (asym ‖·‖²=0) and `t2`
+  symmetric to machine precision (9.7e-34) — so the swapped-occ annotations the derivation applies to some
+  occurrences are value-identical. (All flat same-space leaves — g0/g1/f/s — are symmetric integrals /
+  Fock / overlap too, so their positional permutation is exact.)
+- *It is intermediate screening.* The runtime is **screening-independent**: `SPTC_SPARSE_THRESHOLD=0`
+  leaves its numbers bit-unchanged (‖R‖²=0.118221), i.e. its factorization's intermediates never hit the
+  threshold. The static path **cannot be run screening-free** — it segfaults (dense-intermediate blowup)
+  at *any* threshold below its default. So the static drops ~0.2 % of small intermediate tiles that the
+  runtime keeps, and its ‖R‖² (0.117959) is correspondingly *smaller*. The two are valid factorizations
+  differing only by the static's unavoidable screening; the runtime is the screening-free (more complete)
+  result. There is no bitwise cross-check available because the static reference cannot run at threshold 0.
 
 ## The crash that was in the way (root-caused + fixed)
 
@@ -88,8 +96,9 @@ replay), `SPTC_NO_CACHE=1`, `SPTC_NO_SYMM=1`, `SPTC_SPARSE_THRESHOLD=<x>`. SeQua
 
 ## Verdict
 
-The reproduction is **built and functionally validated** (crash root-caused and fixed; residual matches to
-0.2 %/0.14 %/exact-nnz; a clear, small, known layout item remains to reach bitwise parity). It answers the
-question the plan posed — *does reproducing MPQC's runtime evaluator help?* — with a measured **no: 1.22×
-slower** than the static generated sequence single-thread, because it runs the same `TA::einsum` with extra
-per-node bookkeeping. The value is the faithful control artifact + the measurement.
+The reproduction is **built and functionally validated** (crash root-caused and fixed; residual matches the
+static path to 0.2 %/0.14 %/exact-nnz, the difference being the static's unavoidable intermediate
+screening — the runtime is the screening-free result). It answers the question the plan posed — *does
+reproducing MPQC's runtime evaluator help?* — with a measured **no: 1.2× slower** than the static generated
+sequence single-thread (C2H6 1.22×, C3H8 1.18×), because it runs the same `TA::einsum` with extra per-node
+bookkeeping. The value is the faithful control artifact + the measurement.

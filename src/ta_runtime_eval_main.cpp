@@ -358,6 +358,33 @@ int main(int argc, char** argv) {
     std::cerr << "c1_tot trange: " << ts.c1_tot.trange() << "\n" << std::flush;
   }
 
+  // SPTC_CHECK_SYM: is the ToT coeff/amplitude symmetric under the occ pair
+  // swap i<->j? If ‖X(i,j;·) - X(j,i;·)‖ ~ 0 the yielder's return-as-is is
+  // exact; if large, the swapped-occ annotation the derivation applies to some
+  // occurrences is the sub-% error source.
+  if (std::getenv("SPTC_CHECK_SYM")) {
+    world.gop.fence();
+    ArrayToT c_sym;
+    c_sym("i,j,x;a") = ts.c2_tot("i,j,x;a") - ts.c2_tot("j,i,x;a");
+    ArrayToT t_sym;
+    t_sym("i,j;a,b") = ts.t_i_i_a_a_tot("i,j;a,b") - ts.t_i_i_a_a_tot("j,i;b,a");
+    world.gop.fence();
+    auto cc = ta_compute_checksum(world, c_sym);
+    auto ct = ta_compute_checksum(world, t_sym);
+    if (world.rank() == 0) {
+      std::cout << "  [sym] c2_tot i<->j asym: sumsq=" << std::setprecision(6)
+                << cc.sumsq << " max_abs=" << cc.max_abs << " (vs c2 sumsq "
+                << "below)\n";
+      std::cout << "  [sym] t2 (ij,ab)<->(ji,ba) asym: sumsq=" << ct.sumsq
+                << " max_abs=" << ct.max_abs << "\n" << std::flush;
+    }
+    auto cref = ta_compute_checksum(world, ts.c2_tot);
+    auto tref = ta_compute_checksum(world, ts.t_i_i_a_a_tot);
+    if (world.rank() == 0)
+      std::cout << "  [sym] ref: c2 sumsq=" << cref.sumsq << " t2 sumsq="
+                << tref.sumsq << "\n" << std::flush;
+  }
+
   // Minimal reproducer for the flat(μ̃,μ̃)×ToT-C2 shape-gemm crash: contract a
   // flat (μ̃,μ̃) [f_m_m, same 8×8 μ̃ tiling as g0] against c2_tot several ways.
   if (const char* v = std::getenv("SPTC_REPRO_EINSUM")) {
