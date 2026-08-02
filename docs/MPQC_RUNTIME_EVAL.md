@@ -42,6 +42,19 @@ Same picture on **C3H8** (the port generalises): nnz 261914 (exact), ‖R‖² 0
 less cancellation-dominated than C2H6's). Wall **226 s vs 192 s = 1.18× slower** — consistent with C2H6's
 1.22×.
 
+**Timing (Stage B), runtime / static, MAD_NUM_THREADS=1:**
+
+| | C2H6 np1 | C2H6 np2 | C3H8 np1 |
+|---|---|---|---|
+| runtime | 50.1 s | 40.1 s | 226 s |
+| static | 41.0 s | 33.4 s | 192 s |
+| ratio | 1.22× | 1.20× | 1.18× |
+
+The runtime evaluator is a flat ~1.2× slower single-rank and at np2 (checksum bit-identical across ranks) —
+it does not help at multi-rank either, consistent with `MPQC_MULTIRANK.md`: both run the *same*
+`TA::einsum`, so reproducing MPQC's node-by-node evaluation on top adds bookkeeping without changing the
+distributed kernel.
+
 `‖R‖²` and `max|R|` match to sub-percent with identical nnz — the residual is essentially correct. `Σ Rᵢ`
 is 2.1× off, but that is a ~1e-3 near-total-cancellation quantity (the raw R is strongly antisymmetric:
 symmetrizing collapses ‖R‖² by ~690×, from 0.118 to 1.7e-4), so a ~0.1 % systematic per-element error
