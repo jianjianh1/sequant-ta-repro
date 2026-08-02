@@ -1,0 +1,8 @@
+# P4 cross-node comm-vs-compute decomposition (2026-08-02, node16-31 D-1548, 1 rank/node x 8thr, C3H8 cold, TA_EINSUM_INSTRUMENT, REAL np — not oversubscribed)
+# einsum-region buckets per rank: local_kernel=local contraction COMPUTE; entry_fence=per-op barrier; commsplit/contract+fence/retile=network ~0 (omitted, negligible)
+np,T2_wall_s,einsum_region_s_per_rank,local_kernel_s_per_rank,local_kernel_pct,entry_fence_pct,note
+4,48.5,25.0,20.7,82.9,17.1,baseline
+8,35.8,19.6,16.0,81,18,per-rank compute barely drops
+16,,17.7,14.1,80,20,4x ranks vs np4 -> only 1.47x less per-rank compute (37% of ideal strong-scaling)
+# VERDICT: scaling term = NON-DISTRIBUTING local COMPUTE (local_kernel replicated ~full on every rank), NOT comm.
+# entry_fence (sync) flat ~18%; network buckets ~0. Confirms MULTIRANK 5b (mu-K SUMMA ProcGrid scatters frozen-core zeros -> surplus procs on replicated slab axis) at REAL np. Lever = work distribution/layout = generator/backend project (einsum discards operand pmap), NOT a knob.

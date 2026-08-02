@@ -4,3 +4,4 @@
 __pycache__/
 *.pyc
 /trace/
+docs/scaling-campaign-data/profiles/*.data

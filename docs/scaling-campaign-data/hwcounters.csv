@@ -1,0 +1,5 @@
+# P1 hardware-counter profile (2026-08-02, node3 Xeon D-1548, build-prof arena -O2+FP, C2H6_coo staged /local, 1 thread)
+# DRAM bandwidth via uncore_imc CAS counters (2 channels); peak DDR4-2133 x2 ~= 34 GB/s
+molecule,threads,scale_gemm,wall_s,ipc,instructions_B,l1_dcache_miss_pct,llc_loads_M,dram_gbps_T2_range,dram_pct_of_peak,verdict
+C2H6,1,0,31.06,2.55,274.9,4.31,214,1.4-3.1,4-9,compute/dispatch-bound (NOT memory-bound)
+C2H6,1,1,19.34,1.95,155.9,6.20,390,,,scale-GEMM cuts instructions 275B->156B => 1.60x

@@ -1,0 +1,10 @@
+34.43%  TiledArray::detail::fused_scale_t_x_tot_inplace<TiledArray::ArenaTensor<double, bt
+8.95%  dgemm_kernel_HASWELL                                                               
+3.43%  std::num_get<char, std::istreambuf_iterator<char, std::char_traits<char> > >::_M_ex
+3.30%  __GI_____strtod_l_internal                                                         
+2.70%  TiledArray::Tensor<TiledArray::ArenaTensor<double, btas::zb::RangeNd<(blas::Layout)
+2.69%  std::num_get<char, std::istreambuf_iterator<char, std::char_traits<char> > >::_M_ex
+2.18%  __memset_avx2_unaligned_erms_rtm                                                   
+2.02%  dgemm_incopy_HASWELL                                                               
+1.78%  std::_Function_handler<void (TiledArray::ArenaTensor<double, btas::zb::RangeNd<(bla
+1.73%  build_sparse_array                                                                 
