@@ -36,6 +36,11 @@ structural error.
 | **runtime (`ta_runtime_eval`)** | **150301** | -1.426e-3 | **0.118221** | **0.0170474** |
 | rel. diff | exact | 2.1× | **+0.22 %** | **+0.14 %** |
 
+Same picture on **C3H8** (the port generalises): nnz 261914 (exact), ‖R‖² 0.170051 vs static 0.169723
+(+0.19 %), max|R| 0.0189441 vs 0.0189115 (+0.17 %), Σ Rᵢ -0.04043 vs -0.04381 (+7.7 % — larger sum here,
+less cancellation-dominated than C2H6's). Wall **226 s vs 192 s = 1.18× slower** — consistent with C2H6's
+1.22×.
+
 `‖R‖²` and `max|R|` match to sub-percent with identical nnz — the residual is essentially correct. `Σ Rᵢ`
 is 2.1× off, but that is a ~1e-3 near-total-cancellation quantity (the raw R is strongly antisymmetric:
 symmetrizing collapses ‖R‖² by ~690×, from 0.118 to 1.7e-4), so a ~0.1 % systematic per-element error
