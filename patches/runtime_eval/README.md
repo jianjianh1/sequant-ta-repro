@@ -1,26 +1,21 @@
 # runtime-eval SeQuant-side diagnostics
 
-Modifications applied to the installed SeQuant header
+`result.hpp.modified` is the full modified copy of the installed SeQuant header
 `SeQuant/core/eval/backends/tiledarray/result.hpp` (install prefix
-`/users/jianjian/sequant-fork/install-eval`) while porting the runtime evaluator
-(`src/ta_runtime_eval_main.cpp`, see `docs/MPQC_RUNTIME_EVAL.md`). The install is on
-ephemeral disk; `result.hpp.modified` is the full modified file so the two changes
-survive re-provisioning. Neither is a fix for the evaluator crash — both are kept
-as diagnostics / defensible-direction changes.
+`/users/jianjian/sequant-fork/install-eval`), used while porting the runtime
+evaluator (`src/ta_runtime_eval_main.cpp`; see `docs/MPQC_RUNTIME_EVAL.md`). The
+install is on ephemeral disk; this copy preserves the changes.
 
-## Change 1 — flat-first operand order in `ToT * T -> ToT`
+The only change vs upstream is an **`SPTC_PROD_TRACE`-gated diagnostic** — a few
+`std::cerr`/`fprintf` in `ResultTensorTA::prod` (flat×flat) and
+`ResultTensorOfTensorTA::prod` (ToT branch) printing `lannot / rannot /
+this_annot` + operand types + operand `trange()`s before each `TA::einsum`.
+Enabled with `SPTC_PROD_TRACE=1`. This was the tool that localised the crash: it
+printed the crashing `ToT * T` einsum's ToT operand as **rank-2 outer (9,144)**
+under a **rank-3 annotation** — revealing the driver's leaf yielder was serving
+`c1_tot` (singles coeff) where `c2_tot` (doubles) was required. No behavioural
+change to the evaluator when the env var is unset.
 
-`ResultTensorOfTensorTA::prod`, the `other.is<that_type>()` branch. Upstream emits
-`TA::einsum(this_ToT, other_flat, …)` (ToT operand first). This TiledArray fork's
-de-nesting einsum is not operand-order-symmetric there: ToT-first SIGSEGVs in
-`SparseShape::gemm`; flat-first (the order the static generator always emits,
-`generated_t2_residual.cpp:85`) gets further before heap-corrupting. Swapped to
-flat-first (value-identical — operand listing is commutative).
-
-## Change 2 — `SPTC_PROD_TRACE` env-gated annotation prints
-
-Two `std::fprintf(stderr, …)` in `ResultTensorTA::prod` (flat×flat) and
-`ResultTensorOfTensorTA::prod` (ToT branch) printing `lannot / rannot / this_annot`
-+ operand types before each `TA::einsum`. Enabled by setting `SPTC_PROD_TRACE=1`.
-Used to prove the evaluator's crashing-step annotations are byte-identical to a
-hand-driven replay that runs cleanly (`docs/MPQC_RUNTIME_EVAL.md`).
+(An earlier experiment also swapped the `ToT*T` einsum to flat-first; it was
+**reverted** — the crash was the leaf mis-mapping, not operand order, and
+ToT-first works fine once the yielder is correct.)

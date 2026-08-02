@@ -627,9 +627,17 @@ class ResultTensorOfTensorTA final : public Result {
       // static generator always emits (e.g. generated_t2_residual.cpp:85,
       // `TA::einsum(I_μ̃_μ̃ (flat), C_ap2_μ̃ (ToT), …)`). Operand listing is
       // commutative for the contraction, so swapping is value-identical.
-      auto result = TA::einsum(
-          other.get<compatible_regular_distarray_type>()(a.rannot),
-          get<ArrayT>()(a.lannot), a.this_annot);
+      if (std::getenv("SPTC_PROD_TRACE")) {
+        std::cerr << "  [ToT*T] flat(A rannot='" << a.rannot << "') trange="
+                  << other.get<compatible_regular_distarray_type>().trange()
+                  << "  ToT(B lannot='" << a.lannot << "') trange="
+                  << get<ArrayT>().trange() << "\n"
+                  << std::flush;
+      }
+      auto result =
+          TA::einsum(get<ArrayT>()(a.lannot),
+                     other.get<compatible_regular_distarray_type>()(a.rannot),
+                     a.this_annot);
       log_ta_tensor_host_memory_use();
       return eval_result<this_type>(std::move(result));
 

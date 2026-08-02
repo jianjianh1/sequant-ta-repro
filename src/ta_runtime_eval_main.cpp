@@ -236,10 +236,15 @@ sequant::ResultPtr yield_leaf(const EvalNodeTA& node, const TATensors& ts) {
   if (label == L"t")
     return ret_tot(tnsr.bra_rank() == 1 ? ts.t_i_a_tot : ts.t_i_i_a_a_tot);
   if (label == L"C") {
-    const bool two = ranges::count_if(tnsr.const_indices(),
-                                      &Index::has_proto_indices) >= 1 &&
-                     tnsr.bra_rank() + tnsr.ket_rank() >= 4;
-    return ret_tot(two ? ts.c2_tot : ts.c1_tot);
+    // c1 (singles) vs c2 (doubles): the CSV coefficient carries the occupied
+    // pair in the PNO index's PROTO-indices (a<i> for c1, a<i,j> for c2), NOT
+    // as explicit bra/ket occ modes — so bra_rank()+ket_rank() is 2 for BOTH.
+    // Discriminate by the PNO index's proto-index count (c1 -> 1, c2 -> 2).
+    std::size_t max_proto = 0;
+    for (const auto& ix : tnsr.const_indices())
+      if (ix.has_proto_indices())
+        max_proto = std::max(max_proto, ix.proto_indices().size());
+    return ret_tot(max_proto >= 2 ? ts.c2_tot : ts.c1_tot);
   }
 
   // Flat leaves: pick field by label + space multiset, permute to node->annot().
@@ -276,8 +281,12 @@ sequant::ResultPtr yield_leaf(const EvalNodeTA& node, const TATensors& ts) {
 
 int main(int argc, char** argv) {
   auto& world = TA::initialize(argc, argv);
-#ifdef MKL_ILP64
-#endif
+  // SPTC_SPARSE_THRESHOLD: TA's global block-screening threshold (mirrors
+  // ta_sequant_native_residual_main). =0 disables intermediate screening so the
+  // result is factorization-invariant — the apples-to-apples correctness gate,
+  // since the runtime and static paths screen DIFFERENT intermediates.
+  if (const char* v = std::getenv("SPTC_SPARSE_THRESHOLD"))
+    TA::SparseShape<float>::threshold(static_cast<float>(std::atof(v)));
   if (argc < 2) {
     if (world.rank() == 0)
       std::cerr << "usage: ta_runtime_eval_main <leaf_dir>\n";
@@ -426,8 +435,18 @@ int main(int argc, char** argv) {
       R2(annot) += temp(annot);
     }
     auto t_submit = std::chrono::high_resolution_clock::now();
-    // R2 pair symmetrization (cck.ipp:1754).
-    R2("i,j;a,b") = 0.5 * (R2("i,j;a,b") + R2("j,i;b,a"));
+    world.gop.fence();
+    {
+      auto pre = ta_compute_checksum(world, R2);
+      if (world.rank() == 0)
+        std::cout << "  [pre-symm] nnz=" << pre.nnz << " sum="
+                  << std::setprecision(15) << pre.sum << " sumsq=" << pre.sumsq
+                  << " max_abs=" << pre.max_abs << "\n" << std::flush;
+    }
+    // R2 pair symmetrization (cck.ipp:1754); SPTC_NO_SYMM=1 skips it (to A/B
+    // against the static path, whose symmetrization is SPTC_SYMMETRIZE_R2-gated).
+    if (!std::getenv("SPTC_NO_SYMM"))
+      R2("i,j;a,b") = 0.5 * (R2("i,j;a,b") + R2("j,i;b,a"));
     world.gop.fence();
     auto t_wall = std::chrono::high_resolution_clock::now();
 
