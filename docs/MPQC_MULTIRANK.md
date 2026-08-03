@@ -123,6 +123,16 @@ einsums through futures instead of fencing each) is a driver/evaluator change wi
 np-growing) payoff — logged for a future evaluator effort, but it does not close the 4-5× gap; the
 dominant scaling term remains the runtime evaluator's work-coalescing.
 
+**Source-level follow-up (2026-08-03):** the `entry_fence` is *not* a driver-side knob — it is a
+load-bearing `world.gop.fence()` inside `TA::einsum` itself (`einsum/tiledarray.h:525`, an explicit
+"hotfix … process all preceding tasks before entering this code with many blocking calls" guarding the
+distributed **subworld-split** SUMMA, paired with the `FenceSubWorldsOnExit` RAII at `:741-752`).
+Chaining the generated einsums fenceless therefore requires reworking TiledArray's distributed-einsum
+comm/progress model (the hotfix exists because free threads alone did not ensure progress across the
+blocking MPI split) — a substantial TA-fork change, not the "chain via futures in the driver" it reads
+like. Combined with the modest ~1.1× (non-dominant) payoff, this confirms the entry_fence is **not** a
+bounded lever; it folds into the same generator/backend evaluator project as the work-coalescing term.
+
 ## 6. Verdict
 
 The multi-rank gap is dominated by the scaling term, which grows with molecule size. It is **not**
