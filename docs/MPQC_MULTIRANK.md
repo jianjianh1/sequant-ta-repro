@@ -56,6 +56,8 @@ one GEMM per occupied pair — 1.53× @1thr, 1.20× @8thr single-node. **At mult
 |---|---|---|
 | whole-T2 wall | 50.8 s | **70.8 s** (1.4× slower) |
 
+*(These are arena-only diagnostic runs — not in the committed sweep; `results.csv` has only the owning
+C3H8 np2 cold row, 63.65 s. The direction "scale-GEMM slower at np2" is what matters here.)*
 Checksum-exact (nnz=261914). The optimized kernel (thread-local scratch, no per-call copy) only trimmed
 83.7→70.8 s — it is not a per-call-overhead artifact. **Mechanism:** the distributed SUMMA splits the
 contracted μ̃ into small K-panels, one per `strided_oprod_op` call, so each batched GEMM is tiny and
@@ -133,3 +135,10 @@ fenceless dataflow evaluator — which points, again, at the **runtime evaluator
 solver-inherited layout. **Overnight-closable: no.** The path forward is to reproduce that evaluation
 (fenceless dataflow chaining + coalescing + up-front balanced layout upstream of einsum) — a substantial
 generator/backend project, explicitly out of this scope.
+
+**Update (2026-08-03):** a *naive* reproduction — the `sequant::evaluate` runtime evaluator walking the
+`EvalNode` forest node-by-node — was subsequently built (`src/ta_runtime_eval_main.cpp`) and measured
+**1.2× slower** than the static generated sequence (np1 and np2), checksum-matching to 0.2 %. So walking
+the forest per se is *not* the lever; the coalescing + up-front balanced layout are, and those are the
+generator/backend project. Full write-up: `MPQC_RUNTIME_EVAL.md`; unified counter/comm-measured verdict:
+`MPQC_PROFILE_DEEP.md`.

@@ -91,7 +91,12 @@ PaRSEC overhead single-node). Crucially, the repro uses the **same native MADNES
 threadpool** as MPQC-Pthreads, yet is thread-starved and ~2× slower. That removes the last
 confound: with backend, TiledArray, threadpool, and molecule all held equal, the *only*
 difference is **static generated einsum (repro) vs runtime ReorderSum + CacheManager
-coalescing (MPQC)**. The single-node gap is the evaluator, full stop.
+coalescing (MPQC)**. The single-node gap is the evaluator's work-coalescing (keeping BLAS fed).
+*(Correction 2026-08-03: the "~2× single-node" figure here used the gcc/MKL-era repro (12.4/66/155 s
+np1); with clang/OpenBLAS the 1-thread gap is 3.6× and the repro **beats** MPQC at 8 threads (5.94 vs
+7.8 s) — the residual single-node gap was toolchain + the now-fixed `fused_scale` scale-vs-GEMM
+dispatch. See `MPQC_SINGLE_THREAD.md` (scale-GEMM landed) and `MPQC_PROFILE_DEEP.md` (compute-bound,
+not memory). A naive `sequant::evaluate` port is 1.2× slower — `MPQC_RUNTIME_EVAL.md`.)*
 
 *(Correction — see `MPQC_RUNTIME.md`.* Direct GEMM-level instrumentation later refuted the "large
 batched GEMMs" reading: both MPQC and the repro issue the **same ~170k tiny ~60×60×18 per-pair

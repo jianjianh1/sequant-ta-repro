@@ -13,7 +13,7 @@ per-thread-count call-graph attribution, a warm profile, and a real-np comm/comp
 inefficiency under the single lever already identified.** Specifically:
 
 1. **The "memory-bound" claim is refuted, measured.** The single-thread μ̃Κ half-transform runs at **IPC
-   2.55** and pulls only **~1.4-3.1 GB/s DRAM (≈5-9 % of the D-1548's ~34 GB/s peak)** with L1-resident
+   2.55** and pulls only **~1.4-3.1 GB/s DRAM (≈4-9 % of the D-1548's ~34 GB/s peak)** with L1-resident
    data — it is **compute/instruction-dispatch-bound**, not memory-bound. `MPQC_SINGLE_THREAD.md`'s
    "re-streams C 19.7 B times → memory-bound" inference was wrong; the C tile stays in L1/L2.
 2. **The bottleneck in every regime is the same thing: fine-grained tensor-of-tensor tasks that don't keep
@@ -30,10 +30,10 @@ C2H6, 1 thread, `build-prof`, uncore-IMC DRAM bandwidth:
 
 | | wall | IPC | instr | L1-dmiss | DRAM BW (T2) | % of peak |
 |---|---|---|---|---|---|---|
-| baseline | 31.06 s | **2.55** | 274.9 B | 4.3 % | 1.4-3.1 GB/s | **5-9 %** |
+| baseline | 31.06 s | **2.55** | 274.9 B | 4.3 % | 1.4-3.1 GB/s | **4-9 %** |
 | scale-GEMM | 19.34 s (**1.60×**) | 1.95 | 155.9 B | 6.2 % | — | — |
 
-IPC 2.55 (a memory-bound kernel is < 1.0), L1-miss 4.3 %, LLC traffic ~5 M/s (≈0.3 GB/s), DRAM at 5-9 % of
+IPC 2.55 (a memory-bound kernel is < 1.0), L1-miss 4.3 %, LLC traffic ~5 M/s (≈0.3 GB/s), DRAM at 4-9 % of
 peak — the kernel is **compute-bound**, and scale-GEMM wins purely by **cutting instruction count**
 (275 B → 156 B; the 358 M per-cell scalar AXPYs collapse into GEMMs), not by improving locality. There is
 no memory-locality lever because there is no memory wall.
@@ -88,7 +88,7 @@ One mechanism, three faces:
 
 | regime | symptom | measured here |
 |---|---|---|
-| 1 thread | too many cheap AXPY+dispatch instructions | IPC 2.55, 275 B instr, DRAM 5-9 % of peak (P1) |
+| 1 thread | too many cheap AXPY+dispatch instructions | IPC 2.55, 275 B instr, DRAM 4-9 % of peak (P1) |
 | 8 threads (cold & warm) | pool starves on fine-grained ToT tasks | 45 %/36 % idle-wait, 56 %/85 % non-compute (P2/P3) |
 | multi-rank | dominant op replicated, not divided | per-rank compute 1.47× for 4× ranks (P4) |
 
@@ -154,13 +154,13 @@ saturated. Upgrades P1 from 1-thread-C2H6 to cross-molecule + 8-thread.
 
 ### FC2 — thread-starvation: **CONFIRMED** (structural, not a small-molecule artifact). `thread_sweep.csv`
 C4H10 8thr cold self-time: `ConditionVariable::wait` 24 % + `std::_Function_handler` (per-cell dispatch)
-19.5 % + syscall 11 %, `dgemm` only 6.5 %. On the bigger molecule the mix shifts from *pure wait* (C2H6
+19.5 % + syscall 9.2 %, `dgemm` only 6.5 %. On the bigger molecule the mix shifts from *pure wait* (C2H6
 45 %) toward *per-cell dispatch* (19.5 %), but it is still ~55 % sync+dispatch and **not BLAS-bound** — the
 starvation/dispatch bottleneck is structural across molecule size.
 
 ### FC3 — warm also dispatch-bound: **CONFIRMED** at larger size. `warm_profile.csv`
 C3H8 warm: ~40 % syscall/sync, `dgemm` negligible. C4H10 warm: condvar 18.5 % + dispatch 15 % + syscall
-11 %, `dgemm` ~10 %. Both remain sync/dispatch-dominated (not BLAS-bound like MPQC's warm).
+10.7 %, `dgemm` 6.9 %. Both remain sync/dispatch-dominated (not BLAS-bound like MPQC's warm).
 
 ### FC4 — multi-rank = non-distributing COMPUTE not comm: **CONFIRMED** (both parts). `comm_profile.csv`
 (a) Per-rank `perf record` self-time (np8 C3H8, real cluster): rank0 = `ConditionVariable::wait` 46.7 % +

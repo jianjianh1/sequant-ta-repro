@@ -13,6 +13,17 @@ sides). Numbers here are the source of the §11 tables.
 - `correctness_anchors.csv` — gauge-free R(T=0) repro-vs-MPQC-occ1 checksums (C3H8/C4H10 bit-exact; C5H12 ~7 sig figs).
 - `SUMMARY.md` — regenerated tables (via `scripts/make_summary.py`).
 
+Additional data committed since this README's first draft:
+- **Deep profile (2026-08-02/03, `docs/MPQC_PROFILE_DEEP.md`)** — `hwcounters.csv` (IPC + DRAM bandwidth),
+  `thread_sweep.csv` (per-thread-count self-time), `warm_profile.csv`, `comm_profile.csv` (real-np comm/compute),
+  `mpqc_counters.csv` (MPQC-side IPC/BW), + `profiles/` (flame graphs, per-rank self-time).
+- **Hotspot (`docs/GAP_RESEARCH.md`)** — `gap_ceiling.csv` (hand-GEMM vs einsum ceiling), `gap_decomposition.csv`
+  (single-rank × scaling gap split), `gap_profile.txt` (perf self-time + einsum buckets).
+- **Refuted-lever diagnostics** — `occ_tiling_experiment.csv`, `cyclic_pmap_timing.csv`, `parsec_experiment.csv`,
+  `pmap_distribution_C4H10_np16.txt`.
+- **Aux-Κ batching / hexane** — `auxbatch_correctness.csv`, `repro_hexane.csv`, `repro_hexane_batch.csv`, `mpqc_hexane_batch.csv`.
+- **Contraction IR** — `whole_t1_residual.ctir`, `whole_t2_residual.ctir` (→ `docs/CONTRACTION_IR.md`).
+
 ## Scripts (CloudLab-specific; paths/hostnames hardcoded to this experiment)
 
 - `make_mpqc_variants.py` — derive per-molecule MPQC ref/perf input JSONs from the alkanes-v3 templates.
@@ -31,7 +42,9 @@ sides). Numbers here are the source of the §11 tables.
 
 ## Headline
 
-At equal ranks MPQC is faster for every real molecule (repro ~2–3× slower warm, ~4.5–7×
-cold at np=16); the repro leads only on tiny ethane's warm residual. The gap is the giant
-DF-half-transform intermediate (repro materialises it → scales worse + hexane memory wall;
-MPQC distributes it). See §11 for the full analysis and the proto=100 open lever.
+At equal ranks MPQC is faster for every real molecule (repro ~2–3× slower warm, **~4.5–5.5×
+cold at np=16**, rising to ~7× at np=4); the repro leads only on tiny ethane's warm residual.
+The gap is the giant DF-half-transform intermediate's SUMMA — both sides materialise it; MPQC
+distributes/lays it out better across ranks (and it is a hexane memory wall for both). See §11
+for the full analysis; the counter/comm-measured verdict is in `docs/MPQC_PROFILE_DEEP.md`
+(the "~87 %/~100×-off-peak" mechanism it once cited is superseded there).

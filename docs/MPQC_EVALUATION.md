@@ -10,6 +10,27 @@ out on this node (`mpqc4/src/mpqc/chemistry/qc/lcao/cc/cck.{ipp,h}`; SeQuant eva
 `LAYERED_IR.md` recasts this stage-by-stage trace as a formal layered-IR lowering and shows the
 MPQC-vs-repro difference is a single scheduling pass.*
 
+> **CORRECTION (2026-08-03) — the §8/§9 cold-gap mechanism is superseded; read it as historical.**
+> Later committed measurement (`docs/scaling-campaign-data/gap_profile.txt`, `gap_ceiling.csv`;
+> `MPQC_PROFILE_DEEP.md`) refutes the "one contraction is **~87 % of cold T2** and runs **~100× off
+> peak** = per-outer-cell ToT tile-task overhead of the **flat×ToT** half-transform (`:487`)" claim
+> repeated below (§8 heading, §9, Levers):
+> - The wall-dominant op at 8 threads is **`generated_t2_residual.cpp:488`** (the **ToT×ToT**
+>   contraction over outer μ̃), and `gap_profile.txt` states "**line 487 (flat×ToT) NOT in top ops**".
+>   The top op is ≈**39 %** of the einsum-region (30.5 s of 77.75 s, C4H10 8thr), not 87 %.
+> - The achievable ceiling over a hand per-pair GEMM is **≈2.5×** (`gap_ceiling.csv`), and the
+>   hand-GEMM itself runs at only ~9-10 % of peak (skinny-GEMM-capped) — there is no "~100×-off-peak"
+>   FLOP deficit to recover.
+> - The mechanism is **thread-starvation / compute-dispatch-bound** (dgemm ~6 % self-time,
+>   `ConditionVariable::wait` ~45 % at 8 threads; IPC 2.55, DRAM ≤23 % of peak — *not* memory-bound),
+>   not per-outer-cell tile-task overhead. The `:487` flat×ToT scale is the **1-thread** lever, closed
+>   by the landed `SPTC_SCALE_GEMM` (`MPQC_SINGLE_THREAD.md`).
+> - **The Stage-8 "pmap/tiling" lever and the "flat×ToT per-cell fix / per-pair proto domain" remedies
+>   are refuted** (§8's own sweep shows no speedup; `cyclic_pmap_timing.csv`). The actual lever is the
+>   runtime evaluator's work-coalescing + solver-inherited layout — a *naive* `sequant::evaluate` port
+>   was built and measured **1.2× slower** (`MPQC_RUNTIME_EVAL.md`); the unified verdict is in
+>   `MPQC_PROFILE_DEEP.md`.**
+
 ## The one-line story
 
 MPQC and the repro run the **same algebra** (SeQuant-derived, density-fitted, CSV-transformed
@@ -180,7 +201,7 @@ via the env-gated `SPTC_SYMMETRIZE_R2` knob
 (`src/ta_sequant_native_residual_main.cpp:62-68`) and is documented in `MPQC_COMPARISON.md`
 §11 gap-closing attempts. So the repro correctly does **not** symmetrize; nothing to change.
 
-## Stage 8 — ToT tiling + pmap (**THE cold-gap lever**)
+## Stage 8 — ToT tiling + pmap (hypothesized cold-gap lever — **empirically refuted**, see §8 + the 2026-08-03 correction box)
 
 This is the load-bearing difference. When MPQC builds a CSV residual/amplitude ToT array, it
 does **not** choose a fresh tiling — it **inherits the CSV energies array's exact
@@ -208,7 +229,8 @@ the pmap slot **defaults to empty** (TA's default blocked pmap keyed off that tr
 `SPTC_CYCLIC_PMAP` is set (`maybe_cyclic_pmap`, `:146-151`). Two arrays that MPQC
 would co-locate can land on different rank layouts here. Since the cold np=16 cost is dominated
 by the SUMMA of the one giant DF intermediate (§9; ~87% of cold T2 per the campaign per-op trace,
-not committed here), its proc-grid and load balance — i.e. this tiling+pmap — is the plausible
+not committed here — **superseded: op :488 ≈40 %, see the top correction box + `gap_profile.txt`**),
+its proc-grid and load balance — i.e. this tiling+pmap — is the plausible
 cold-gap cause. **Actionable** (see §Verification and §Levers) — and the verification below
 narrows *which* part: the occ tile *size* turns out not to matter, so it is the **pmap
 co-location**, not the tiling granularity, that is the real lever.
@@ -377,7 +399,8 @@ ranks does not translate into a faster contraction** — exactly the "balanced i
 SUMMA layout, so the input array pmap is not what governs the giant intermediate's execution.
 The cold-gap bottleneck is *inside* the ToT `einsum` — consistent with the earlier per-op profile
 (`MPQC_COMPARISON.md`/campaign notes: one contraction is ~87 % of cold T2 and runs ~100× off
-peak = per-outer-cell ToT tile-task overhead, not flops, not distribution). **Lever (a) as
+peak = per-outer-cell ToT tile-task overhead, not flops, not distribution — **superseded: op :488
+≈40 %, ~2.5× ceiling, thread-starvation; see the top correction box**). **Lever (a) as
 "fix the input pmap" is therefore refuted as a timing fix.** `SPTC_CYCLIC_PMAP` is kept as a
 correct, gated diagnostic (it does balance the inputs), but the real cold cost is the ToT
 `einsum`'s per-outer-cell overhead for the giant DF half-transform intermediate itself.
@@ -434,7 +457,8 @@ evaluation approach"):
   (checksum-invariant, 0 idle ranks) but does **not** speed up cold np=16 (48.9 s → 49.9 s; §
   verification above) — TA re-maps operands into its own SUMMA layout, so the input pmap doesn't
   govern the contraction. The genuine cold cost is the ToT `einsum`'s per-outer-cell overhead for
-  the giant DF half-transform (~87 % of cold T2, ~100× off peak). A **generator refactor was also
+  the giant DF half-transform (~87 % of cold T2, ~100× off peak — **superseded: thread-starvation on
+  op :488, ≈40 %, ~2.5× ceiling; see the top correction box + `MPQC_PROFILE_DEEP.md`**). A **generator refactor was also
   tried and refuted** (§8): `(μ̃,Κ)`-inner is structurally impossible (inner ⇔ proto; μ̃,Κ are
   non-proto/global), and no correctness-safe optimizer setting reduces the tiny-cell intermediate
   (`OptFor::Memsize` and `NO_CSE` produce *more*; only proto=100 removes it, at the cost of a

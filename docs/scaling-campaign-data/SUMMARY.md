@@ -33,7 +33,8 @@
   C2H6 0.77x (repro faster) → C3H8 1.27x → C4H10 1.69x → C5H12 2.91x. (ratio = repro/MPQC.)
   Warm barely rank-scales (work too small).
 - Two distinct 'cold' magnitudes — keep separate: (a) the shipped proto45/TPD=8 DF-half-transform
-  config (comparison.csv: repro ~80s / MPQC 7.7s = ~10x np1, ~5.4x over 16 ranks); (b) the §11
+  config (comparison.csv: repro ~80s / MPQC 7.7s = ~10x np1; the repro self-scales ~5.4x over np1→16,
+  narrowing the repro-vs-MPQC gap to ~2x at np16 — the 5.4x is the repro's own speedup, not the gap); (b) the §11
   whole-residual grid below (results.csv: repro cold np1 12.2s / MPQC 7.7s = ~1.6x). ~10x is (a), not (b).
 - proto=100 generator extent avoids the giant intermediate (3x cold np1) but the t-dep value differs
   (MPQC_COMPARISON.md §11 reports ~0.2% cc-pVTZ order-sensitivity; the earlier ~7% is superseded).

@@ -82,6 +82,12 @@ SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 \
   ../mpqc-benchmark/traces/checksum-run/sptc_coo_iter1
 ```
 
+> **Note:** the default `./build/` above is the **arena** build, which is single-thread-only — its
+> ToT inner cells are freed cross-thread by MADNESS lazy deletion and **segfault at
+> `MAD_NUM_THREADS>1`** (see *Compile-time flags* below). Run the arena build with
+> `MAD_NUM_THREADS=1`, or build with **owning ToT** (`-DCMAKE_CXX_FLAGS=-DSPTC_OWNING_TOT`) for the
+> 8-thread / multi-rank runs (owning is what the scaling campaign and the committed checksums use).
+
 The run must reproduce these checksums exactly, modulo last-few-ULP float
 reassociation noise:
 

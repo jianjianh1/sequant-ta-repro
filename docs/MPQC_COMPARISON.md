@@ -14,7 +14,10 @@ clang-21; and (3) MPQC's published number is a *warm* CCSD iteration
 one. Correcting all three, on equal footing the reproduction **matches or
 beats real MPQC**: cold-to-cold ~1.44× faster on T2, warm-to-warm ~3.3×
 faster. Both sides use the same TiledArray, issue the same `TA::einsum`
-calls, and form the same intermediates.
+calls, and form the same intermediates. *(Scope: this "matches or beats"
+result is the **ethane, cc-pVDZ-F12, single-rank** point of §1-10; §11 shows
+that at cc-pVTZ scale and **equal ranks** MPQC is faster for every real
+molecule — do not read the headline in isolation.)*
 
 "Real MPQC" = source in `/users/jianjian/mpqc4`, built as the instrumented
 Apptainer SIF by `/users/jianjian/mpqc-benchmark`, on ethane (C2H6,
@@ -278,6 +281,12 @@ Env-gated knobs leave defaults untouched when unset:
 > refuted, and the single-node `SPTC_SCALE_GEMM` win does **not** transfer to multi-rank
 > (the distributed SUMMA shrinks its GEMMs). Verdict: not overnight-closable. The §11
 > tables below are current (clang/OpenBLAS owning — not toolchain-stale).
+>
+> **See also `MPQC_PROFILE_DEEP.md` (2026-08-02/03)** — the counter/comm/cross-molecule-confirmed
+> unified verdict (memory-bound refuted; one lever = fine-grained ToT tasks not keeping BLAS fed;
+> neither side memory-bound), which **supersedes the §11 "~87 %/~100×-off-peak" perf-mechanism prose**
+> (corrected in lever 1 below); and **`MPQC_RUNTIME_EVAL.md`** — the `sequant::evaluate` port was
+> built and is **1.2× slower**, confirming that reproducing MPQC's evaluator does not close the gap.
 
 The ethane parity study (§1–10) is one point. This section extends it to the
 linear-alkane series **C₂H₆, C₃H₈, C₄H₁₀, C₅H₁₂** (cc-pVTZ / cc-pVTZ-RI, the
@@ -452,13 +461,18 @@ concrete, named levers (full trace in `MPQC_EVALUATION.md`):
    The `MPQC_EVALUATION.md` verification sweeps show occ tile *size* does not move it (finer = no
    change, coarser = worse) and a cyclic input pmap that eliminates the idle ranks does not either
    (48.9 s → 49.9 s, checksum-invariant) — TA re-maps operands into its own SUMMA layout. The
-   bottleneck is *inside* the ToT `einsum`: one contraction is ~87 % of cold T2 and runs ~100× off
-   peak (per-outer-cell tile-task overhead). A generator refactor was tried and refuted too
-   (`MPQC_EVALUATION.md` §8): `(μ̃,Κ)`-inner is structurally impossible (inner ⇔ proto; μ̃,Κ are
-   non-proto), and no correctness-safe optimizer setting reduces the tiny-cell intermediate
-   (`OptFor::Memsize`→3, `NO_CSE`→4 vs Flops→2; only proto=100→0, the slower/divergent path). So
-   the fix is a TA backend improvement to flat×ToT contraction, or a derivation-level change giving
-   the PAO index μ̃ a per-pair proto domain — not any in-repo generator/tiling/pmap knob.
+   bottleneck is *inside* the ToT `einsum`, but the mechanism below was **corrected 2026-08-03** (see
+   `MPQC_PROFILE_DEEP.md` + committed `gap_profile.txt`/`gap_ceiling.csv`): the wall-dominant op is
+   `generated_t2_residual.cpp:488` (ToT×ToT over outer μ̃), ≈**40 %** of the cold einsum-region (not
+   ~87 %), sitting only ≈**2.5×** above the skinny-GEMM ceiling (not ~100× off peak). The loss is
+   **thread-starvation / compute-dispatch-bound** (dgemm ~6 % self-time, `ConditionVariable::wait`
+   ~45 % at 8 threads; IPC 2.55, DRAM ≤23 % of peak — not memory-bound, not per-cell tile-task
+   overhead). A generator refactor was also refuted (`MPQC_EVALUATION.md` §8): `(μ̃,Κ)`-inner is
+   structurally impossible (inner ⇔ proto; μ̃,Κ non-proto), and no correctness-safe optimizer setting
+   reduces the tiny-cell intermediate (`OptFor::Memsize`→3, `NO_CSE`→4 vs Flops→2; only proto=100→0,
+   the slower/divergent path). So the lever is the runtime evaluator's work-coalescing +
+   solver-inherited layout — a naive `sequant::evaluate` port was built and measured **1.2× slower**
+   (`MPQC_RUNTIME_EVAL.md`) — not any in-repo generator/tiling/pmap knob.
 2. **Hexane memory wall → aux-Κ batching — DONE.** Implemented (`src/aux_k_batching.h`,
    `SPTC_AUX_TARGET_SIZE`) and validated: checksums transparent (10–13 sig figs), peak RSS −43…−63% (table above).
    Clears the hexane wall on **both** sides — MPQC batched single-rank, and the repro completes hexane

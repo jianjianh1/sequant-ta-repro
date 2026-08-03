@@ -18,6 +18,19 @@ uncommitted "~87% is op 487 / ~100× off peak / per-outer-cell task overhead" pr
 > retained for its ceiling/skinny-GEMM math (still valid), but its MPQC-parity and PaRSEC-lever
 > conclusions are superseded by `MPQC_ABLATION.md`.
 
+> **CORRECTION (2026-08-03).** Three more items below are now superseded by later measurement:
+> (1) the pointer above to `MPQC_RUNTIME.md`'s "array-construction / per-GEMM overhead" is itself
+> superseded — `MPQC_SINGLE_THREAD.md` refutes the array-construction/compaction lever (a no-op) and
+> lands `SPTC_SCALE_GEMM` (the real 1-thread lever), and `MPQC_PROFILE_DEEP.md` FC1 measures the kernel
+> **compute/dispatch-bound** (IPC 2.55, DRAM ≤23 % of peak) — so the "memory/latency-bound at the BLAS
+> level" phrasing (Finding 2) should read "**latency/overhead-bound at low arithmetic intensity**", not
+> memory-bound. (2) The single-rank component of the Finding-4 decomposition (repro np1 12.4/66/155 s)
+> is the **gcc/MKL** era; the honest clang/OpenBLAS repro is 29.9 s @1thr (3.6×) and **beats MPQC at 8
+> threads** — that term was toolchain + the now-fixed `fused_scale`, so only the *growing multi-node
+> scaling term* survives. (3) "prototyped only … not landed in the full residual" is stale:
+> `SPTC_SCALE_GEMM` was landed in the arena einsum path (1.53×@1thr), targeting op :487's broadcast
+> scale. See `MPQC_SINGLE_THREAD.md` + `MPQC_PROFILE_DEEP.md`.
+
 ## Headline
 
 The remaining repro-vs-MPQC gap is **cold time** (~4.5–5.5× at cc-pVTZ / np=16, `MPQC_COMPARISON.md`

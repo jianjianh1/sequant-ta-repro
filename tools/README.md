@@ -2,7 +2,7 @@
 
 Investigation utilities from the MPQC performance-parity study. None are on
 the core build path; the residual driver (`ta_sequant_native_residual_main`)
-builds and runs without them. Build the C++ one with
+builds and runs without them. Build the C++ ones with
 `cmake -B build -DSPTC_BUILD_TOOLS=ON .`.
 
 - **`emit_split.py`** — SSA-splits `src/generated_t2_residual.cpp` into a
@@ -20,5 +20,10 @@ builds and runs without them. Build the C++ one with
   generated residual with `TA::einsum` textually replaced by `sptc::einsum`.
 - **`make_bisect_driver.py`** — generates a standalone `SPTC_CSE_BISECT_N`
   driver to bisect cross-term CSE when debugging the SeQuant derivation.
+- **`gap_microbench.cpp` + the `gap_microbench` target** — achievable-speedup
+  ceiling for the cold CSE37 hotspot (`generated_t2_residual.cpp:487-488`): the
+  giant μ̃Κ block done as a hand per-pair BLAS GEMM vs `TA::einsum` on identical
+  data (`-DSPTC_OWNING_TOT`). Backs `docs/GAP_RESEARCH.md` / `gap_ceiling.csv`.
+  Reads `MAD_NUM_THREADS`, `SPTC_TRIALS`.
 
 See `docs/MPQC_COMPARISON.md` for how these were used and what they showed.

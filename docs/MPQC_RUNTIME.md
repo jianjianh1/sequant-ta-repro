@@ -14,6 +14,22 @@ the single-node advantage is not "large batched GEMMs," it is scheduling of iden
 > overhead, single-thread"; and reproducing the EVALUATOR would not close the gap. See the final
 > section "Can the repro reproduce the runtime? — measured verdict."**
 
+> **CORRECTION (2026-08-03) — supersedes the body's single-node numbers, lever, and mechanism.** Three
+> body claims are now refuted by later measurement; read them as historical:
+> 1. **The "1-thread arena 54.2 s / ~6× gap" is a gcc/MKL toolchain artifact.** The honest
+>    clang/OpenBLAS arena baseline is **29.9 s @1thr → 3.6×** (`MPQC_SINGLE_THREAD.md`), and at 8
+>    threads the repro (5.94 s) **beats** MPQC (7.8 s) — there is no ~6× whole-story gap.
+> 2. **The "array-construction / compaction / `build_tot_array` rewrite" lever is refuted.**
+>    `SPTC_COMPACT_COEFFS` is a same-binary no-op (leaves already single-page); the real single-thread
+>    lever is the scale-vs-GEMM dispatch of the broadcast-inner μ̃Κ half-transform, closed cheaply by the
+>    landed `SPTC_SCALE_GEMM` (1.53×@1thr). See `MPQC_SINGLE_THREAD.md`.
+> 3. **The mechanism is compute/dispatch-bound, not memory/construction.** `MPQC_PROFILE_DEEP.md` FC1
+>    measured the kernel at IPC 2.55, DRAM 4-9 % of peak, L1-resident — the ~53 % "per-inner-cell
+>    dispatch/construction" profile below reflects the *instruction count* of the per-cell path, which
+>    the scale-GEMM cuts (274.9 B → 155.9 B), not an array-construction cost. See `MPQC_PROFILE_DEEP.md`
+>    (unified verdict) and `MPQC_RUNTIME_EVAL.md` (the `sequant::evaluate` port was built and is 1.2×
+>    slower — confirming reproducing the evaluator does not help).**
+
 ## The question
 
 `MPQC_ABLATION.md` measured that MPQC's cold residual is BLAS-bound (44–53% dgemm self-time) while

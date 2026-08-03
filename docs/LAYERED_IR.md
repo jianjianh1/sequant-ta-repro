@@ -34,7 +34,7 @@ Three facts from the trace shape everything below:
   `EvalNode<EvalExpr>` (`sequant-fork/.../eval/eval_expr.hpp:395`, `using EvalNode =
   FullBinaryNode<T>`). The forest is the pivot that the *entire* export framework consumes.
 - **The emission boundary is already a clean plug-in.** `Generator<Context>`
-  (`SeQuant/core/export/generator.hpp:39`) + the `export.hpp` driver
+  (`SeQuant/core/export/generator.hpp:40`) + the `export.hpp` driver
   (`export_group`→`GenerationVisitor`) is implemented by ~8 backends today: `TiledArrayGenerator`,
   `ItfGenerator`, NumPy/PyTorch einsum, Julia (TensorKit/ITensor), `TextGenerator`, and — most
   relevant here — `ContractionIRGenerator` (CTIR).
@@ -131,7 +131,9 @@ interpreter emits the *same* primitive calls node by node.
 
 ## 3. One term, all the way down
 
-The giant DF half-transform — the contraction that is ~87 % of cold T2 — at each level:
+The giant DF half-transform — the dominant cold-T2 block (its ToT×ToT consumer `generated_t2:488` is
+≈40 % of the cold einsum-region per `gap_profile.txt`; the earlier "~87 %/~100×-off-peak" figure is
+superseded — see `MPQC_PROFILE_DEEP.md`) — at each level:
 
 ```
 L4  Tensor-Equation      … g{i j; a b} · t{a b; i j} …            (abstract 4-index ERI × amplitude; no DF/CSV)

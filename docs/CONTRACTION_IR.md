@@ -16,8 +16,12 @@ computed** and of **what MPQC does**. Five concrete gaps:
    variable reused by several later statements (`CSE37` appears in N places). You cannot see the
    computation's structure, or *why* an intermediate is shared, or how much.
 2. **No cost/size — so the dominant cost is invisible.** There are no cell counts, inner extents,
-   or per-cell figures. The contraction that is ~87 % of cold T2 and runs ~100× off peak
-   (`generated_t2_residual.cpp:487`) looks *identical* to a cheap one. This whole repo's cold-gap
+   or per-cell figures. The contraction block that dominates cold T2 (`generated_t2_residual.cpp:487`
+   is the highest-cell/CELL-BOUND node; its ToT×ToT consumer `:488` is the wall-dominant op, ≈40 % of
+   the cold einsum-region — `gap_profile.txt`) looks *identical* to a cheap one. *(The earlier "~87 % /
+   ~100× off peak" figure is superseded: `gap_profile.txt` puts the top op at ≈40 % and `gap_ceiling.csv`
+   the achievable ceiling at ≈2.5×; `MPQC_PROFILE_DEEP.md` measures it thread-starvation/compute-bound,
+   not a ~100×-off-peak deficit.)* This whole repo's cold-gap
    investigation had to reverse-engineer, by profiling and by 16-node experiments, a fact the IR
    states at emit time: that intermediate is **1.6 M tiny per-pair ToT cells**.
 3. **No domain semantics.** The `;` in `"i_1,i_2,μ̃,Κ;a"` splits ToT outer/inner but never says
@@ -101,9 +105,11 @@ def CSE37_i_i_ap2_ap2_Κ [i j Κ ; a a'] tot  uses=2  t-indep  [persistent: buil
 
 Read off directly: it is **t-indep** (amplitude-independent → MPQC builds it once, not every
 iteration; the repro's cold driver rebuilds it every pass — the warm/cold gap in one word); it is
-**CELL-BOUND** with **1.6 M** tiny per-pair ToT cells (the ~100×-off-peak tiled-task overhead that
-`MPQC_EVALUATION.md` §8 identified as the real cold bottleneck — occ tiling and pmap were both
-empirically ruled out); and it carries μ̃ and Κ as *outer* block-sparse axes with only the small
+**CELL-BOUND** with **1.6 M** tiny per-pair ToT cells (the fine-grained-ToT-task overhead — occ tiling
+and pmap were both empirically ruled out; but the "~100×-off-peak" quantifier and the `MPQC_EVALUATION.md`
+§8 "pmap/tiling is the lever" framing are **superseded** by `MPQC_PROFILE_DEEP.md`: the real, measured
+lever is task-coalescing / keeping BLAS fed, ~2.5× recoverable, compute-dispatch-bound); and it carries
+μ̃ and Κ as *outer* block-sparse axes with only the small
 `a` PNO domain inner (the proto structure that makes the tiny cells unavoidable, and that no
 generator knob can reshape — `MPQC_EVALUATION.md` §8). Its consumer `CSE37…` is the `t-indep`/
 `t-dep` boundary, so CTIR marks *it* `[persistent: built once, reused across iters]` — the exact

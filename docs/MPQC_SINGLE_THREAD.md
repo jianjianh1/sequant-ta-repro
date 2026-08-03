@@ -17,19 +17,26 @@ executes as a per-cell scalar broadcast instead of a GEMM.*
   single-page (built up front via `arena_outer_init`), so compacting them is a no-op. Every prior
   round's "array-construction / compaction" hypothesis is wrong for single-thread.
 - **The real root cause (new).** At 1 thread the #1 symbol is `fused_scale_t_x_tot_inplace` at
-  **33.5%** (8-thread: repro 18% vs MPQC ~1%). It is **358.8 million per-cell scalar×vector AXPY
-  calls** streaming 19.7 B elements. These come from ~69 flat×ToT terms — dominated by the μ̃Κ
+  **33.5%** (8-thread: repro ~11%, `thread_sweep.csv`, vs MPQC ~1%). It is **358.8 million per-cell
+  scalar×vector AXPY calls** touching 19.7 B elements (mostly re-reads of a small, cache-resident tile
+  — see the mechanism correction below). These come from ~69 flat×ToT terms — dominated by the μ̃Κ
   half-transform `I(i,i,μ̃,Κ;a) = Σ_μ̃ g(μ̃,μ̃,Κ)·C(i,i,μ̃;a)` (`generated_t2:487`) and its cousins
   — where the PNO index `a` rides as a **ToT inner spectator (broadcast)** and the contraction is
   over an **outer** index (μ̃/Κ). Because there is no inner contraction, TA's `BatchedContractReduce`
   cannot use the strided-DGEMM path and falls to a per-(output-cell × contracted-k) scalar AXPY.
 - **What MPQC does instead.** The same math is a **per-pair GEMM**: for each occupied pair,
   `I[n,a] += g[n,k]·C[k,a]` (contract μ̃=k, with the PNO `a` as the GEMM free/N dimension). The GEMM
-  reads `C[k,a]` once and reuses it across all `n=(μ̃',Κ)` via cache-blocking; the per-cell AXPY
-  re-streams it for every `n`. That reuse is the whole difference — hence MPQC's ~1%.
+  does the same work in **far fewer instructions** — one dense FMA kernel instead of 358.8 M per-cell
+  scalar-AXPY dispatches — hence MPQC's ~1%. (Mechanism correction: this is instruction-count/dispatch,
+  **not** memory locality. `MPQC_PROFILE_DEEP.md` FC1 later *measured* this kernel **compute-bound**
+  (IPC 2.55, DRAM 4-9 % of peak, `C` L1-resident); the earlier "BLAS reuses `C` from cache while the
+  AXPY re-streams it from memory" reading is refuted — the scale-GEMM win is cutting the instruction
+  count 274.9 B → 155.9 B, not avoiding DRAM traffic.)
 - **Op-level ceiling (checksum-validated, scales).** `tools/gap_microbench` does the giant block
-  both ways at 1 thread: C2H6 **TA 27.05 s vs hand per-pair GEMM 3.67 s = 7.4×**; C3H8 **115.9 vs
-  15.9 s = 7.3×** — results matching to ~1e-13 (hand 14.4–15.5 vs TA 1.96–2.13 GFLOP/s). The lever
+  both ways at **1 thread, scale-op only**: C2H6 **TA 27.05 s vs hand per-pair GEMM 3.67 s = 7.4×**;
+  C3H8 **115.9 vs 15.9 s = 7.3×** — results matching to ~1e-13 (hand 14.4–15.5 vs TA 1.96–2.13
+  GFLOP/s). (Distinct from the committed `gap_ceiling.csv`, which is the **8-thread whole-block**
+  ceiling ≈ 2.5×; these 1-thread scale-only numbers are not yet committed to a CSV.) The lever
   is real, large, and size-stable.
 - **LANDED (2026-08-01, `SPTC_SCALE_GEMM=1`, env-gated).** A batched scale-GEMM strided op in the TA
   arena einsum path takes C2H6 cold T2 from **30.60 → 20.01 s at 1 thread (1.53×)**, checksum exact
@@ -64,8 +71,10 @@ The same contraction is a GEMM if you treat the per-pair PNO `a` as the GEMM N d
 `I[(μ̃'Κ), a] = g[(μ̃'Κ), μ̃] · C[μ̃, a]` per occupied pair (`M=μ̃'·Κ, N=a, K=μ̃`). MPQC's evaluator/
 array layout realizes exactly this per-pair GEMM (`gap_microbench` reproduces it and matches to
 1e-13). The GEMMs are skinny (`a≈45–63`), so even the hand-GEMM is only ~5–10% of peak — but 7.4×
-the per-cell AXPY, because BLAS reuses `C[μ̃,a]` from cache across the (μ̃',Κ) rows while the AXPY
-re-streams it 19.7 B times from memory.
+the per-cell AXPY, because the GEMM does the work in **far fewer instructions** (one dense FMA kernel
+vs 358.8 M scalar-AXPY dispatches). The AXPY's 19.7 B element-touches are re-reads of a small,
+**L1-resident** `C[μ̃,a]`, not DRAM traffic — `MPQC_PROFILE_DEEP.md` FC1 measures this kernel
+compute/dispatch-bound (IPC 2.55, DRAM 4-9 % of peak), refuting the earlier memory-reuse reading.
 
 ## The fix (landed) and its scope
 
