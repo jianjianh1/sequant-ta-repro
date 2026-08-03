@@ -152,3 +152,15 @@ generator/backend project, explicitly out of this scope.
 the forest per se is *not* the lever; the coalescing + up-front balanced layout are, and those are the
 generator/backend project. Full write-up: `MPQC_RUNTIME_EVAL.md`; unified counter/comm-measured verdict:
 `MPQC_PROFILE_DEEP.md`.
+
+**Update (2026-08-03) — the work-coalescing half implemented + measured (`SPTC_CE_E_GEMM`,
+`patches/ce_e_gemm/`, `scaling-campaign-data/ce_e_gemm.csv`).** The concrete work-coalescing lever was
+built: an owning-ToT batched-GEMM kernel for the wall-dominant **op-488** (`generated_t2:488`, ToT×ToT
+outer-μ̃), coalescing its per-cell `std::function` dispatch into one GEMM per result cell — the ce+e
+analogue of the landed `SPTC_SCALE_GEMM` (op-487). Result: a real **single-node** win (checksum-exact,
+C2H6 1.16×@1thr/**1.27×@8thr**, C3H8 1.09×/**1.19×**; the 8-thread win exceeding the 1-thread win is the
+"keep-BLAS-fed" signature). But it **does not transfer to multi-rank** — C3H8 np4 0.99×, np8 1.03×,
+C4H10 np8 0.98× — decaying to neutral as the distributed μ̃ SUMMA splits each rank's GEMM K (the same
+failure as scale-GEMM). This **confirms by construction** that the multi-rank scaling term is work
+**distribution** (the ProcGrid/solver-inherited-layout half), not per-op coalescing — the coalescing lever
+is landed for single-node but the multi-rank gap needs the layout follow-on.

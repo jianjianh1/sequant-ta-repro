@@ -1,0 +1,14 @@
+# SPTC_CE_E_GEMM (op-488 coalescing) — 2026-08-03, node3 + node16-31 (Xeon D-1548), owning-ToT (build-owning Release), checksum-exact vs baseline.
+# op-488 = generated_t2_residual.cpp:488 ToT×ToT outer-μ̃ contraction (CSE37); the ce+e batched-GEMM analogue of the landed SPTC_SCALE_GEMM (op-487).
+# gap_microbench isolated ceiling (TA einsum / hand per-pair GEMM):
+#   C2H6 1thr: L487 7.82x | L488 9.09x ;  C2H6 8thr: L487 1.53x | L488 1.89x
+molecule,np,threads,off_wall_s,on_wall_s,speedup,checksum,note
+C2H6,1,1,49.59,42.75,1.16,exact,single-node
+C2H6,1,8,12.00,9.42,1.27,exact,single-node (8thr win > 1thr win = pool-feeding)
+C3H8,1,1,252.16,231.55,1.09,exact,single-node
+C3H8,1,8,63.70,53.58,1.19,exact,single-node
+C3H8,4,8,47.22,47.71,0.99,exact,multi-rank: neutral (mu-K SUMMA-split shrinks GEMM K)
+C3H8,8,8,36.95,35.79,1.03,exact,multi-rank: marginal
+C4H10,8,8,67.87,69.37,0.98,exact,multi-rank: neutral/slightly slower
+# VERDICT: real SINGLE-NODE lever (1.16-1.27x, larger at 8thr, complementary to SPTC_SCALE_GEMM), checksum-exact, 211435 batched GEMMs 0 fallbacks.
+# Does NOT transfer to multi-rank (decays np1 1.19-1.27x -> np4/8 ~neutral) — same failure as scale-GEMM. Confirms the multi-rank scaling term is work DISTRIBUTION (ProcGrid/layout), not per-op coalescing.

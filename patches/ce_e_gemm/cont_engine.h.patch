@@ -1,0 +1,63 @@
+--- patches/scale_gemm/cont_engine.h.full	2026-08-01 06:43:16.147215386 -0600
++++ patches/ce_e_gemm/cont_engine.h.full	2026-08-03 11:52:29.095211045 -0600
+@@ -1610,6 +1610,42 @@
+                               this->factor_, inner_size(this->indices_),
+                               inner_size(this->left_indices_),
+                               inner_size(this->right_indices_));
++            // SPTC_CE_E_GEMM (op-488 coalescing): under owning-ToT the arena
++            // ce+e-GEMM (init_inner_tile_op, is_tensor_view_v-gated) is compiled
++            // out, so this ToT×ToT-outer-contraction fragments into per-cell
++            // std::function dispatches (the std::_Function_handler self-time).
++            // Install the OWNING gather+GEMM variant (env-gated, default off) into
++            // the same arena_strided_dgemm_ce_e_tile_op_ slot; the ToT wiring
++            // (set_strided_oprod_op) installs it into op_. ce+e regime only
++            // (num_contract_ranks()==0), double inner, no inner permute.
++            if constexpr (std::is_same_v<typename result_tile_element_type::
++                                             numeric_type,
++                                         double> &&
++                          std::is_same_v<typename left_tile_element_type::
++                                             numeric_type,
++                                         double> &&
++                          std::is_same_v<typename right_tile_element_type::
++                                             numeric_type,
++                                         double>) {
++              if (TiledArray::detail::ce_e_gemm_enabled() &&
++                  contrreduce_op.gemm_helper().num_contract_ranks() == 0 &&
++                  !bool(inner(this->perm_))) {
++                const scalar_type factor = this->factor_;
++                this->arena_strided_dgemm_ce_e_tile_op_ =
++                    [factor](result_tile_type& Cc, const left_tile_type& Lt,
++                             const right_tile_type& Rt,
++                             const math::GemmHelper& gh) {
++                      using integer = TiledArray::math::blas::integer;
++                      integer M, N, K;
++                      gh.compute_matrix_sizes(M, N, K, Lt.range(), Rt.range());
++                      TiledArray::detail::arena_strided_dgemm_ce_e_owning(
++                          Cc, Lt, Rt, static_cast<std::size_t>(M),
++                          static_cast<std::size_t>(N),
++                          static_cast<std::size_t>(K), gh.left_op(),
++                          gh.right_op(), double(factor));
++                    };
++              }
++            }
+             constexpr bool arena_eligible =
+                 TiledArray::detail::is_contraction_arena_tot_v<
+                     result_tile_type, left_tile_type, right_tile_type>;
+@@ -1928,8 +1964,15 @@
+               // flat×ToT t_x_tot case under an outer contraction, batch the
+               // per-cell scalar AXPYs into one GEMM per occupied pair (the MPQC
+               // per-pair GEMM form of the μ̃Κ half-transform). factor==1 here,
+-              // matching the arena_plan gate above.
+-              if constexpr (t_x_tot) {
++              // matching the arena_plan gate above. The kernel reads/writes
++              // arena VIEW inner cells; under owning-ToT (SPTC_OWNING_TOT) the
++              // inner tiles are owning Tensor<double>, so this whole branch is
++              // discarded at compile time and the per-cell fused op is used.
++              if constexpr (t_x_tot &&
++                            TiledArray::is_tensor_view_v<
++                                result_tile_element_type> &&
++                            TiledArray::is_tensor_view_v<
++                                right_tile_element_type>) {
+                 if (TiledArray::detail::scale_gemm_enabled()) {
+                   this->arena_strided_scale_tile_op_ =
+                       [](result_tile_type& Cc, const left_tile_type& Lt,
