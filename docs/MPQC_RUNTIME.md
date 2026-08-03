@@ -28,7 +28,7 @@ the single-node advantage is not "large batched GEMMs," it is scheduling of iden
 >    dispatch/construction" profile below reflects the *instruction count* of the per-cell path, which
 >    the scale-GEMM cuts (274.9 B → 155.9 B), not an array-construction cost. See `MPQC_PROFILE_DEEP.md`
 >    (unified verdict) and `MPQC_RUNTIME_EVAL.md` (the `sequant::evaluate` port was built and is 1.2×
->    slower — confirming reproducing the evaluator does not help).**
+>    slower — confirming reproducing the evaluator does not help).
 
 ## The question
 

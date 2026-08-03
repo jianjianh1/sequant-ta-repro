@@ -29,7 +29,7 @@ MPQC-vs-repro difference is a single scheduling pass.*
 >   are refuted** (§8's own sweep shows no speedup; `cyclic_pmap_timing.csv`). The actual lever is the
 >   runtime evaluator's work-coalescing + solver-inherited layout — a *naive* `sequant::evaluate` port
 >   was built and measured **1.2× slower** (`MPQC_RUNTIME_EVAL.md`); the unified verdict is in
->   `MPQC_PROFILE_DEEP.md`.**
+>   `MPQC_PROFILE_DEEP.md`.
 
 ## The one-line story
 
