@@ -119,3 +119,75 @@ task-coalescing / keeping BLAS fed — MPQC's runtime evaluator + solver-inherit
 generator/backend project already scoped in `MPQC_MULTIRANK.md`, not an env knob. Any implementation effort
 should target that (fenceless dataflow chaining + up-front balanced layout upstream of einsum), with the
 honest expectation, per `MPQC_RUNTIME_EVAL.md`, that a naive evaluator port alone does not capture it.
+
+---
+
+## Fact-check (2026-08-03): adversarial, cross-molecule, both-sides, cluster-confirmed
+
+The P1-P4 verdict above came mostly from **C2H6 (smallest molecule), single-node, mostly 1 thread**. This
+pass re-tests each conclusion on the **largest molecules (C4H10, C5H12) and worst-case configs**, fills the
+gaps (MPQC-side counters, cluster per-rank perf, 8-thread bandwidth), and states CONFIRMED/REVISED per
+conclusion. Data appended to the CSVs; new flame graph `profiles/flame_C4H10_t8.svg`.
+
+**Method corrections surfaced by fact-checking my own runs (worth recording):** (1) the **arena binary
+crashes on C4H10/C5H12** (giant-intermediate blowup) — the big molecules need the **owning** binary
+(`$W/bin`, arena-sym-free); a first FC1 pass silently profiled only the LOAD phase. (2) DRAM bandwidth must
+be **T2-isolated** — the memory-heavy COO *load* alone hits 87 % of peak and produced a false "memory-
+bound" alarm; isolating the last `wall_s` seconds of the perf `-I` timeline fixes it. (3) `/local`, `/tmp`,
+`/users` are one root disk here — big-molecule staging + a 786 M dwarf perf.data filled it (MPI_Init then
+fails with PMIX OOM); dwarf call-graph capture is impractical on the long 8-thread runs, `fp` flat
+self-time is the reliable readout.
+
+### FC1 — memory-bound: **CONFIRMED** (adversarially). `hwcounters.csv`
+T2-isolated counters, owning binary:
+
+| (T2 only) | IPC | DRAM avg | DRAM peak |
+|---|---|---|---|
+| C4H10 1thr | 1.80 | 2.7 GB/s (8 %) | 8.7 (25 %) |
+| C4H10 8thr | 0.90 | 8.0 GB/s (23 %) | 17.3 (51 %) |
+| C5H12 8thr | 0.87 | 7.1 GB/s (21 %) | 20.4 (60 %) |
+
+Even the worst case (biggest DF + 8 threads) sustains only **21-23 % of the ~34 GB/s peak** (bursts to
+~55 %, never saturated). The low 8-thread IPC (~0.9) is **thread-starvation** (FC4a: 46.7 % condvar-wait),
+not memory stalls — a memory-bound kernel would show low IPC *and* saturated DRAM; here DRAM is far from
+saturated. Upgrades P1 from 1-thread-C2H6 to cross-molecule + 8-thread.
+
+### FC2 — thread-starvation: **CONFIRMED** (structural, not a small-molecule artifact). `thread_sweep.csv`
+C4H10 8thr cold self-time: `ConditionVariable::wait` 24 % + `std::_Function_handler` (per-cell dispatch)
+19.5 % + syscall 11 %, `dgemm` only 6.5 %. On the bigger molecule the mix shifts from *pure wait* (C2H6
+45 %) toward *per-cell dispatch* (19.5 %), but it is still ~55 % sync+dispatch and **not BLAS-bound** — the
+starvation/dispatch bottleneck is structural across molecule size.
+
+### FC3 — warm also dispatch-bound: **CONFIRMED** at larger size. `warm_profile.csv`
+C3H8 warm: ~40 % syscall/sync, `dgemm` negligible. C4H10 warm: condvar 18.5 % + dispatch 15 % + syscall
+11 %, `dgemm` ~10 %. Both remain sync/dispatch-dominated (not BLAS-bound like MPQC's warm).
+
+### FC4 — multi-rank = non-distributing COMPUTE not comm: **CONFIRMED** (both parts). `comm_profile.csv`
+(a) Per-rank `perf record` self-time (np8 C3H8, real cluster): rank0 = `ConditionVariable::wait` 46.7 % +
+syscalls ~17 % — **zero MPI/progress/comm functions in the top**. The per-rank bottleneck is intra-rank
+thread-starvation, not communication. (b) Non-distribution reproduces on C4H10 (the ~7×-gap molecule):
+per-rank `local_kernel` 36.2 → 24.7 → 17.3 s for np 4/8/16 = **2.08× for 4× ranks** (52 % of ideal),
+balanced across ranks.
+
+### FC5 — MPQC-side counters: **CONFIRMED** (both sides compute-bound; edge is BLAS-feeding). `mpqc_counters.csv`
+MPQC ethane under `perf stat -a`: the CCSD-residual phase runs at IPC ~1.1-1.3 and DRAM **2-6.7 GB/s
+(~6-20 % of peak)** — MPQC's residual is **also compute-bound, not memory-bound**, like the repro. (An
+earlier high-IPC 1.8 / near-zero-DRAM phase is the cache-resident SCF/equation-generation.) MPQC does the
+55-term T2 in **2.1-3.1 s vs the repro's ~7 s** at 8 threads, with 44-53 % dgemm self-time (ABLATION). So
+**neither side is memory-bound**; MPQC's ~2.5-3× single-node edge is entirely *keeping BLAS fed* (no
+thread-starvation), not memory bandwidth and not a different kernel. Caveat: the residual is brief (2-3 s),
+so 1 s-interval isolation is approximate — the qualitative "not memory-bound" is clear, the exact IPC less so.
+
+## Fact-check verdict
+
+**All five conclusions CONFIRMED; none revised.** The deep-profile verdict is upgraded from
+"single-molecule (C2H6), single-node, mostly 1-thread inference" to **cross-molecule (through C5H12),
+8-thread, warm, real-cluster, and both-sides counter-measured**:
+- memory-bound is refuted even adversarially (biggest DF + 8 threads → DRAM ≤23 % of peak); **both** repro
+  and MPQC are compute-bound, so the gap is not memory on either side;
+- the one bottleneck — fine-grained ToT tasks that don't keep BLAS fed — is structural across molecule size
+  (its 8-thread mix shifts from pure thread-wait toward per-cell dispatch as molecules grow, but never
+  becomes BLAS-bound), persists into the warm loop, and at multi-rank is non-distributing compute (not
+  comm: zero MPI in the per-rank self-time);
+- no new knob-lever; the lever remains MPQC's runtime-evaluator work-coalescing + solver-inherited layout
+  (the generator/backend project), now counter/comm/cross-molecule-confirmed.

@@ -2,3 +2,6 @@
 # warm = t-dependent residual only (DF/CSV block precomputed once). self-time % flat.
 molecule,threads,warm_wall_s,syscall_yield_pct,condvar_wait_pct,fused_scale_pct,dgemm_pct,sync_total_pct,compute_total_pct,verdict
 C2H6,8,1.65,17.5,14.6,7.9,7.2,~36,~15,warm ALSO dispatch/starvation-bound (NOT BLAS-bound like MPQC warm dgemm 24%) — same fine-grained task-feeding issue
+# FC3 fact-check (2026-08-03, owning ta_warm_t2 8thr):
+C3H8,8,warm,23.8,8.1,,,~40,low,warm dispatch/sync-bound (dgemm negligible) CONFIRMED
+C4H10,8,warm,10.7,18.5,15.0(func),6.9,~30,~10,warm sync+dispatch-bound at larger size (dgemm ~10%) CONFIRMED not BLAS-bound

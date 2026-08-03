@@ -3,3 +3,9 @@
 molecule,threads,scale_gemm,wall_s,ipc,instructions_B,l1_dcache_miss_pct,llc_loads_M,dram_gbps_T2_range,dram_pct_of_peak,verdict
 C2H6,1,0,31.06,2.55,274.9,4.31,214,1.4-3.1,4-9,compute/dispatch-bound (NOT memory-bound)
 C2H6,1,1,19.34,1.95,155.9,6.20,390,,,scale-GEMM cuts instructions 275B->156B => 1.60x
+# FC1 fact-check (2026-08-03): OWNING binary ($W/bin, arena CRASHES on C4H10/C5H12 giant intermediate), T2-ISOLATED (last wall_s intervals; the memory-heavy COO load excluded — it alone hits 87% peak and caused a false alarm). DRAM via uncore IMC.
+molecule,threads,ipc,dram_avg_gbps,dram_avg_pct,dram_peak_gbps,dram_peak_pct,verdict
+C4H10,1,1.80,2.7,8,8.7,25,compute-bound (memory-bound REFUTED at 1thr on big molecule)
+C4H10,8,0.90,8.0,23,17.3,51,NOT bandwidth-saturated; low IPC = thread-starvation (FC4a condvar-wait 46.7%) not memory
+C5H12,8,0.87,7.1,21,20.4,60,same — biggest molecule + 8thr still NOT memory-bound (avg 21% peak)
+# FC1 VERDICT: memory-bound REFUTED confirmed adversarially (biggest DF + most threads). 8-thread low IPC is starvation not memory (DRAM never saturates). Corrects P1's 1-thread-only measurement -> now cross-molecule + 8-thread.

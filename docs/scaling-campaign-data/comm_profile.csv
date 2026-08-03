@@ -6,3 +6,5 @@ np,T2_wall_s,einsum_region_s_per_rank,local_kernel_s_per_rank,local_kernel_pct,e
 16,,17.7,14.1,80,20,4x ranks vs np4 -> only 1.47x less per-rank compute (37% of ideal strong-scaling)
 # VERDICT: scaling term = NON-DISTRIBUTING local COMPUTE (local_kernel replicated ~full on every rank), NOT comm.
 # entry_fence (sync) flat ~18%; network buckets ~0. Confirms MULTIRANK 5b (mu-K SUMMA ProcGrid scatters frozen-core zeros -> surplus procs on replicated slab axis) at REAL np. Lever = work distribution/layout = generator/backend project (einsum discards operand pmap), NOT a knob.
+# FC4 fact-check (2026-08-03): CONFIRMED. C4H10 (owning, real np) local_kernel/rank: np4=36.2 np8=24.7 np16=17.3 s -> 2.08x for 4x ranks (52% ideal), balanced. Non-distribution reproduces on the ~7x-gap molecule.
+# FC4a per-rank perf self-time (np8 C3H8): rank0 = ConditionVariable::wait 46.7% + syscall 14% + entry_SYSCALL 3.4% + MutexWaiter 2.5% -> ~64% thread-sync; ZERO MPI_/progress/comm functions in top. CONFIRMS local_kernel is compute/thread-starvation NOT comm-wait.
