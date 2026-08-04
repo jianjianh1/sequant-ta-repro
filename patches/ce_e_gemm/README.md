@@ -1,5 +1,10 @@
 # SPTC_CE_E_GEMM — op-488 coalescing kernel (the work-coalescing lever, single-node)
 
+> **EXPERIMENT — NOT part of the benchmark harness.** This is a TiledArray-backend kernel
+> modification, env-gated by `SPTC_CE_E_GEMM=1` and **default-off** (unset = byte-identical stock
+> backend). It is preserved here for reproducibility only. Do **not** enable it for a
+> framework-comparison run. See `docs/HARNESS_VS_EXPERIMENTS.md`.
+
 Env-gated (default off) TiledArray-fork kernel that coalesces **op-488**
 (`src/generated_t2_residual.cpp:488`, the ToT×ToT outer-μ̃ contraction forming CSE37,
 `…μ̃,Κ;a * …μ̃;a -> …Κ;a,a`) from per-cell `std::function` dispatch into one batched GEMM per

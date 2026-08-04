@@ -3,13 +3,27 @@
 A native SeQuant → TiledArray reproduction of MPQC's closed-shell CSV-CCSD
 T1/T2 residual — **no MPQC installation required**.
 
-The point of this repo is **finer control of what contractions are made**.
-Instead of MPQC's runtime tensor-expression evaluator, we generate an
-explicit, named `TA::einsum` sequence from SeQuant
-(`src/generated_t1_residual.cpp` / `src/generated_t2_residual.cpp` — 119 and
-252 named contractions) and run it directly, so the contraction order, the
-intermediates, and the tiling are all things we choose and can inspect,
-rather than decisions made inside an opaque evaluator.
+The point of this repo is **finer control of what contractions are made**, so
+the same contraction sequence can be benchmarked against any tensor-contraction
+framework, **without cache/reuse**. Instead of MPQC's runtime tensor-expression
+evaluator, we generate an explicit, named `TA::einsum` sequence from SeQuant
+(`src/generated_t1_residual.cpp` / `src/generated_t2_residual.cpp`) and run it
+directly, so the contraction order, the intermediates, and the tiling are all
+things we choose and can inspect, rather than decisions made inside an opaque
+evaluator.
+
+The committed sequence is **cache-free**: it is regenerated with `SPTC_NO_CSE=1`
+(un-deduped, per-summand, **no cross-term common-subexpression elimination** —
+162 and 503 contractions for T1/T2), so nothing is reused across terms. That is
+the "without cache/reuse" cost the benchmark exists to measure. The **backend is
+stock TiledArray** — the perf-campaign kernel modifications are quarantined and
+default-off (`docs/HARNESS_VS_EXPERIMENTS.md`), so the TA numbers are an honest
+yardstick. The same SeQuant forest emits other
+backends too: a **NumPy einsum** program (`backends/numpy/`, run by
+`tools/numpy_runner.py`) comes from the same forest — proving a second framework
+is a small additive generator block (the flat sequence is faithful; the CSV/PNO
+tensor-of-tensor part needs a generator enhancement — `docs/NUMPY_BACKEND.md`).
+MPQC is kept as a no-rebuild cross-check reference (`docs/MPQC_REFERENCE_FLAGS.md`).
 
 The ground-truth comparison target — real MPQC built from an instrumented
 fork, plus the ethane leaf/reference data both sides were validated against
@@ -24,10 +38,18 @@ not tiling or pmap — both empirically ruled out).
 
 ## Layout
 
-- `src/generated_t{1,2}_residual.cpp` — the explicit contraction sequences,
-  pasted verbatim from SeQuant's `TiledArrayGenerator` export backend. This
-  is the artifact the repo exists to control; **do not hand-edit** (see
-  *Regenerating* below).
+- `src/generated_t{1,2}_residual.cpp` — the explicit **cache-free** contraction
+  sequences (regenerated with `SPTC_NO_CSE=1`, no cross-term reuse), exported
+  from SeQuant's `TiledArrayGenerator` and post-processed by
+  `tools/postprocess_generated.py`. This is the artifact the repo exists to
+  control; **do not hand-edit** (see *Regenerating* below).
+- `tools/postprocess_generated.py` — reproducible transform from raw generator
+  output to the committed form (arena ToT type → `ArrayToT` alias + header).
+- `backends/numpy/` + `tools/numpy_runner.py` — the *same* sequence emitted for
+  NumPy einsum from the same SeQuant forest (second-backend proof; see
+  `docs/NUMPY_BACKEND.md` for the runnable-status caveat).
+- `experiments/` + `patches/` — quarantined perf-campaign backend modifications,
+  all default-off (`docs/HARNESS_VS_EXPERIMENTS.md`); NOT the benchmark.
 - `src/ta_builder.h` — the tiling-control core: builds the flat and
   tensor-of-tensor (CSV/PNO) arrays and decides their tile boundaries. This
   is where the `SPTC_*` tiling knobs live.
@@ -55,20 +77,31 @@ not tiling or pmap — both empirically ruled out).
 - `tools/` — optional diagnostics/benchmarks (off by default; see
   `tools/README.md`).
 
-## Build
+## The benchmark build
 
-The residual links against a **clang-built** TiledArray, so it must itself
-be built with clang (matching ABI).
+There is **one** canonical benchmark build: **stock TiledArray, owning
+tensor-of-tensor tiles, every experiment gate unset.** This is the honest,
+unmodified backend — no custom kernels, nothing from `docs/HARNESS_VS_EXPERIMENTS.md`
+§B is compiled in or firing. The residual links against a **clang-built**
+TiledArray, so it must itself be built with clang (matching ABI).
 
 ```bash
 ./setup-tiledarray.sh    # clones + builds TiledArray cd53bd3 (clang-21, OpenBLAS)
                          # into third_party/tiledarray-cd53bd3-clang/install; ~20-30 min
+# Canonical build: owning ToT (-DSPTC_OWNING_TOT), Release, no gates.
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_C_COMPILER=clang-21 .
+      -DCMAKE_CXX_COMPILER=clang++-21 -DCMAKE_C_COMPILER=clang-21 \
+      -DCMAKE_CXX_FLAGS=-DSPTC_OWNING_TOT .
 cmake --build build -j"$(nproc)" --target ta_sequant_native_residual_main
 ```
 
-If TiledArray is installed elsewhere, pass `-DTA_INSTALL_DIR=/path/to/install`.
+Owning ToT is the stock, thread-safe (`MAD_NUM_THREADS>1`), multi-rank-capable
+build the committed checksums use. (Omitting `-DSPTC_OWNING_TOT` gives the
+arena-view variant — also stock TA, but single-thread-only on cd53bd3; see
+`docs/HARNESS_VS_EXPERIMENTS.md`.) If TiledArray is installed elsewhere, pass
+`-DTA_INSTALL_DIR=/path/to/install`. **Do not** pass any `SPTC_*_GEMM` /
+`SPTC_AUX_TARGET_SIZE` / `SPTC_COMPACT_COEFFS` gate for a benchmark run — those
+are quarantined experiments, not the harness.
 
 ## Run + validate
 
@@ -82,14 +115,15 @@ SPTC_MAD_WAIT_POLICY=yield MAD_NUM_THREADS=8 \
   ../mpqc-benchmark/traces/checksum-run/sptc_coo_iter1
 ```
 
-> **Note:** the default `./build/` above is the **arena** build, which is single-thread-only — its
-> ToT inner cells are freed cross-thread by MADNESS lazy deletion and **segfault at
-> `MAD_NUM_THREADS>1`** (see *Compile-time flags* below). Run the arena build with
-> `MAD_NUM_THREADS=1`, or build with **owning ToT** (`-DCMAKE_CXX_FLAGS=-DSPTC_OWNING_TOT`) for the
-> 8-thread / multi-rank runs (owning is what the scaling campaign and the committed checksums use).
+> **Note:** the canonical `./build/` above is the **owning** build (`-DSPTC_OWNING_TOT`), which is
+> thread-safe at `MAD_NUM_THREADS>1` and is what the committed checksums use. If you instead build the
+> arena-view variant (omit `-DSPTC_OWNING_TOT`), run it with `MAD_NUM_THREADS=1` — its ToT inner cells
+> are freed cross-thread by MADNESS lazy deletion and segfault above one thread.
 
 The run must reproduce these checksums exactly, modulo last-few-ULP float
-reassociation noise:
+reassociation noise (the cache-free sequence recomputes shared intermediates,
+so it is slower than a CSE'd/cached evaluator by design — that recompute cost
+is what "without cache/reuse" means and what this benchmark measures):
 
 | Residual | nnz | sum | sumsq | max_abs |
 | --- | --- | --- | --- | --- |
@@ -140,7 +174,25 @@ pipeline (biorthogonal transform → `tail_factor` → `density_fit` →
 `csv_transform` → `flatten` → single-term `optimize()`) and exports through
 `TiledArrayGenerator`.
 
-To regenerate: run that test, paste its output over
-`src/generated_t{1,2}_residual.cpp`, and **re-sync the leaf-parameter →
-`TATensors` field mapping** in `src/ta_sequant_native_residual.h` (its header
-comment documents the exact mapping the generated code depends on).
+To regenerate the **cache-free** (default) sequence:
+
+```bash
+# 1. Derive + export un-deduped (no cross-term CSE). Writes /tmp/claude-ta-generator-test/generated_R{1,2}.cpp
+SPTC_NO_CSE=1 MAD_NUM_THREADS=1 <build>/tests/manual/ta_generator_cc_test
+
+# 2. Rewrite the arena ToT type -> the ArrayToT alias + add the provenance header (reproducible; no hand-edit).
+python3 tools/postprocess_generated.py /tmp/claude-ta-generator-test/generated_R1.cpp 1 <date> > src/generated_t1_residual.cpp
+python3 tools/postprocess_generated.py /tmp/claude-ta-generator-test/generated_R2.cpp 2 <date> > src/generated_t2_residual.cpp
+```
+
+Then **re-sync the leaf-parameter → `TATensors` field mapping** in
+`src/ta_sequant_native_residual.h`: the parameter *order* changes on
+regeneration (the NAME↔field mapping does not). Run the post-processor with
+`--print-order` to see the new order, and update the two forward declarations
+and two `whole_t{1,2}_residual(...)` wrapper calls to match. Verify by rebuilding
+and reproducing the checksums above — the sequence changes, the residual must not.
+
+(Omit `SPTC_NO_CSE=1` to regenerate the CSE'd/reuse variant instead — a
+different, deduped sequence with the same result, kept available via this toggle
+for cache-vs-no-cache comparison. The **default committed sequence is
+cache-free**.)

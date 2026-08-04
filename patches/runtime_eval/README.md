@@ -1,5 +1,11 @@
 # runtime-eval SeQuant-side diagnostics
 
+> **EXPERIMENT — NOT part of the benchmark harness.** The `sequant::evaluate()` runtime-evaluator
+> driver (`src/ta_runtime_eval_main.cpp`) reproduces MPQC's runtime tree-walk as a *control*; it is
+> CMake-gated by `SPTC_BUILD_RUNTIME_EVAL=ON` and **default-off**. It builds a second tensor-evaluation
+> path (the opposite of this repo's "explicit, controllable sequence" goal) and is measured to be ~1.2×
+> slower — kept for comparison, not as the benchmark. See `docs/HARNESS_VS_EXPERIMENTS.md`.
+
 `result.hpp.modified` is the full modified copy of the installed SeQuant header
 `SeQuant/core/eval/backends/tiledarray/result.hpp` (install prefix
 `/users/jianjian/sequant-fork/install-eval`), used while porting the runtime

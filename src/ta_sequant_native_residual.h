@@ -96,21 +96,25 @@ inline TA::TSpArrayD permute_ij_3(const TA::TSpArrayD& src) {
 // is unchanged (same leaves, same permute_ij_2/3 needs); only the
 // positional order of this parameter list and the call sites below were
 // updated to match the regenerated generated_R1.cpp/generated_R2.cpp.
+// Parameter order matches the cache-free (SPTC_NO_CSE=1) regeneration
+// (2026-08-03). The NAME<->TATensors-field mapping is unchanged (same leaves,
+// same permute_ij_2/3 needs); only the positional order changed vs the prior
+// CSE'd export. See tools/postprocess_generated.py --print-order.
 ArrayToT whole_t1_residual(
-    const ArrayToT& C_uKu_ap1,
-    const ArrayToT& t_ap1_i,
     const ArrayToT& C_ap1_uKu,
+    const ArrayToT& C_uKu_ap1,
     const TA::TSpArrayD& f_i_i,
-    const TA::TSpArrayD& s_uKu_uKu,
+    const TA::TSpArrayD& f_i_uKu,
+    const TA::TSpArrayD& f_uKu_i,
+    const TA::TSpArrayD& f_uKu_uKu,
+    const TA::TSpArrayD& g_i_i_K,
     const TA::TSpArrayD& g_i_uKu_K,
     const TA::TSpArrayD& g_uKu_i_K,
     const TA::TSpArrayD& g_uKu_uKu_K,
-    const TA::TSpArrayD& g_i_i_K,
-    const ArrayToT& C_uKu_ap2,
+    const TA::TSpArrayD& s_uKu_uKu,
+    const ArrayToT& t_ap1_i,
     const ArrayToT& t_ap2_ap2_i_i,
-    const TA::TSpArrayD& f_i_uKu,
-    const TA::TSpArrayD& f_uKu_uKu,
-    const TA::TSpArrayD& f_uKu_i);
+    const ArrayToT& C_uKu_ap2);
 
 // ---- whole_t2_residual (from generated_R2.cpp, 55-term T2 residual) ------
 // Phase O third follow-up (2026-07-22): CSE-deduped, same as T1. The
@@ -123,37 +127,43 @@ ArrayToT whole_t1_residual(
 // (this ta-bench build): zero hangs, checksums matching the known-correct
 // value every time, and T2 measurably FASTER than the pre-CSE baseline
 // (see plan file's "Phase O third follow-up RESULTS" for the number).
+// Parameter order matches the cache-free (SPTC_NO_CSE=1) regeneration
+// (2026-08-03); NAME<->field mapping unchanged, only positional order.
 ArrayToT whole_t2_residual(
-    const ArrayToT& C_uKu_ap1,
-    const TA::TSpArrayD& g_i_uKu_K,
-    const ArrayToT& t_ap1_i,
     const ArrayToT& C_ap2_uKu,
-    const ArrayToT& C_uKu_ap2,
-    const TA::TSpArrayD& g_uKu_uKu_K,
-    const ArrayToT& t_ap2_ap2_i_i,
-    const TA::TSpArrayD& s_uKu_uKu,
-    const TA::TSpArrayD& g_i_i_K,
-    const TA::TSpArrayD& f_i_uKu,
-    const TA::TSpArrayD& g_uKu_i_K,
+    const ArrayToT& C_uKu_ap1,
     const TA::TSpArrayD& f_i_i,
-    const TA::TSpArrayD& f_uKu_uKu);
+    const TA::TSpArrayD& f_i_uKu,
+    const TA::TSpArrayD& f_uKu_uKu,
+    const TA::TSpArrayD& g_i_i_K,
+    const TA::TSpArrayD& g_i_uKu_K,
+    const TA::TSpArrayD& g_uKu_i_K,
+    const TA::TSpArrayD& g_uKu_uKu_K,
+    const TA::TSpArrayD& s_uKu_uKu,
+    const ArrayToT& t_ap1_i,
+    const ArrayToT& t_ap2_ap2_i_i,
+    const ArrayToT& C_uKu_ap2);
 
 /// Calls whole_t1_residual() with `ts`'s fields in the mapping documented
 /// above. Returns the ToT-typed T1 residual.
 inline ArrayToT compute_t1_residual_native(const TATensors& ts) {
-  return whole_t1_residual(ts.c1_tot, ts.t_i_a_tot, ts.c1_tot, ts.f_i_i,
-                          ts.s_m_m, ts.g, permute_ij_3(ts.g), ts.g0, ts.g1,
-                          ts.c2_tot, ts.t_i_i_a_a_tot, ts.f_i_m, ts.f_m_m,
-                          permute_ij_2(ts.f_i_m));
+  // New cache-free order: C_ap1_μ̃, C_μ̃_ap1, f_i_i, f_i_μ̃, f_μ̃_i, f_μ̃_μ̃,
+  // g_i_i_Κ, g_i_μ̃_Κ, g_μ̃_i_Κ, g_μ̃_μ̃_Κ, s_μ̃_μ̃, t_ap1_i, t_ap2_ap2_i_i, C_μ̃_ap2.
+  return whole_t1_residual(ts.c1_tot, ts.c1_tot, ts.f_i_i, ts.f_i_m,
+                          permute_ij_2(ts.f_i_m), ts.f_m_m, ts.g1, ts.g,
+                          permute_ij_3(ts.g), ts.g0, ts.s_m_m, ts.t_i_a_tot,
+                          ts.t_i_i_a_a_tot, ts.c2_tot);
 }
 
 /// Calls whole_t2_residual() with `ts`'s fields in the mapping documented
 /// above. Returns the ToT-typed T2 residual.
 inline ArrayToT compute_t2_residual_native(const TATensors& ts) {
-  return whole_t2_residual(ts.c1_tot, ts.g, ts.t_i_a_tot, ts.c2_tot,
-                          ts.c2_tot, ts.g0, ts.t_i_i_a_a_tot, ts.s_m_m,
-                          ts.g1, ts.f_i_m, permute_ij_3(ts.g), ts.f_i_i,
-                          ts.f_m_m);
+  // New cache-free order: C_ap2_μ̃, C_μ̃_ap1, f_i_i, f_i_μ̃, f_μ̃_μ̃, g_i_i_Κ,
+  // g_i_μ̃_Κ, g_μ̃_i_Κ, g_μ̃_μ̃_Κ, s_μ̃_μ̃, t_ap1_i, t_ap2_ap2_i_i, C_μ̃_ap2.
+  return whole_t2_residual(ts.c2_tot, ts.c1_tot, ts.f_i_i, ts.f_i_m,
+                          ts.f_m_m, ts.g1, ts.g, permute_ij_3(ts.g),
+                          ts.g0, ts.s_m_m, ts.t_i_a_tot, ts.t_i_i_a_a_tot,
+                          ts.c2_tot);
 }
 
 #endif  // SPTC_TA_SEQUANT_NATIVE_RESIDUAL_H

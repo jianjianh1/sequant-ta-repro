@@ -1,5 +1,11 @@
 # Batched scale-GEMM patch — reproduces MPQC's per-pair GEMM for the μ̃Κ half-transform
 
+> **EXPERIMENT — NOT part of the benchmark harness.** This is a TiledArray-backend kernel
+> modification, env-gated by `SPTC_SCALE_GEMM=1` and **default-off** (unset = byte-identical stock
+> backend). It is preserved here for reproducibility only. Do **not** enable it for a
+> framework-comparison run — a hand-optimized backend is not a representative yardstick. See
+> `docs/HARNESS_VS_EXPERIMENTS.md`.
+
 Landed 2026-08-01. Env-gated by `SPTC_SCALE_GEMM=1` (default off = byte-identical baseline).
 
 ## Result (C2H6 cc-pVTZ, cold T2, 1 thread, node3, clang/OpenBLAS arena)

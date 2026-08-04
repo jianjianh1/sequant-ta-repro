@@ -96,7 +96,10 @@ if(tiledarray_FOUND)
         find_package(SeQuant CONFIG QUIET
             HINTS "${_SQ_INSTALL}/lib/cmake/sequant")
         if(SeQuant_FOUND)
-            add_executable(ta_runtime_eval_main src/ta_runtime_eval_main.cpp)
+            # Quarantined experiment (docs/HARNESS_VS_EXPERIMENTS.md): the
+            # sequant::evaluate() runtime-evaluator control, moved out of src/
+            # (the harness) into experiments/. Default-off; not the benchmark.
+            add_executable(ta_runtime_eval_main experiments/ta_runtime_eval_main.cpp)
             target_link_libraries(ta_runtime_eval_main PRIVATE
                 tiledarray SeQuant::SeQuant)
             target_include_directories(ta_runtime_eval_main
