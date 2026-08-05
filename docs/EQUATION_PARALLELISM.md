@@ -49,8 +49,25 @@ residual costs **6.8–13.1% more** than the strictly serialized sum of its own 
 deflates the serial side. The comparison is handicapped in favour of finding overlap, and
 overlap still is not found.
 
+**The comparison is cross-pass, and that is where its force comes from.** SeQuant's
+`evaluate()` is a single-threaded recursion, so within one pass the per-product timed
+intervals are disjoint *by construction* and `Σ_products ≤ pass wall` regardless of what TA
+does internally — a within-pass comparison could not detect overlap. But `Σ_products` comes
+from the traced level-4 export pass (`cck.ipp:2094`, run *after* the timed trials) while
+`T_async` comes from the untraced benchmark trials. Tracing can only inflate the per-product
+walls, so `T_async > Σ_traced ≥ Σ_untraced`, and the no-overlap direction survives.
+
 **Verdict: MPQC evaluates its residual contractions strictly serially, and pays a further
 6.8–13.1% in overhead that is not attributable to any product's own work.**
+
+**This rules out equation-level overlap a fortiori, and §3 explains why it must.** All 81
+terms are evaluated by one thread in a sequential loop (`cck.ipp:1813`, then
+`for (auto&& n : ranges::views::tail(nodes)) { auto temp = evaluate_term(n); … }`); inside
+each term every contraction blocks that same thread at `dist_eval.wait()`; and every
+`TA::einsum` opens with a collective fence. No two contractions can overlap, hence no two
+equations can. That is structural, not a statistical inference from the table above — which
+is why the 6.8–13.1% should be read as dead time layered on strict serialization, not as
+partial overlap that failed to pay off.
 
 The per-product walls are completion times, not submission times:
 `detail::timed_eval_inplace` (sequant-fork `SeQuant/core/eval/eval.hpp:349-360`) wraps the
