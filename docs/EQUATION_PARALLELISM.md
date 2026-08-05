@@ -201,6 +201,43 @@ Blockers 1 and 2 are the structural pair that explains §1 completely: (2) means
 issuing thread cannot overlap two statements, and (1) means even multiple issuing threads
 cannot help on one World.
 
+### Are there fences *between equations*? No — and there is nothing to remove
+
+Worth stating explicitly, because "remove the fences between the equations" is the intuitive
+fix and it is not available.
+
+**Upstream `cck.ipp` contains zero `gop.fence()` calls.** There is no inter-equation fence in
+MPQC at all (`git show origin/batched-tn-eval:…/cck.ipp | grep -c "gop.fence()"` → 0). This
+fork's `cck.ipp` has 15, and every one is instrumentation:
+
+| path | fence between equations? | provenance |
+|---|---|---|
+| upstream MPQC | **none** | — |
+| the measured benchmark path | **none** — all five call sites pass `evaluate_csv_closedshell(R, false)` (`cck.ipp:2001,2013,2050,2062,2107`) | fork, deliberately off |
+| ordinary solver iterations | yes, after every `+=` (`cck.ipp:1833`) | fork instrumentation |
+| equation-timing mode | yes, before and after every term (`cck.ipp:1788-1792`) | fork instrumentation |
+
+Note `emit_diagnostics` defaults to **true** (`cck.h:1104`), so ordinary solver iterations in
+*this fork's* build do fence after every `+=`, serializing the accumulation chain. That is
+this repo's instrumentation, not MPQC behavior, and it costs ~0.17% (§1). The benchmark path
+disables it precisely so the measurement reflects TiledArray rather than the instrumentation
+— see the source comment at `cck.ipp:1837-1841`.
+
+**But fences do occur between equations anyway — 665 per R1+R2 pass.** Not because anything
+places them at equation boundaries, but because blocker 1 fires at the entry of *every*
+contraction. Of the 727 products, 62 are scalar multiplies that never reach `TA::einsum`
+(measured by classifying each product's operands); the remaining **665 each open with a
+collective `world.gop.fence()`**. Term *N*'s last contraction and term *N+1*'s first are
+therefore separated by one — exactly as every contraction is separated from its neighbour,
+within a term or across terms. There is nothing special about an equation boundary.
+
+**Consequence for any future work:** the equation-level serialization is *not* fence-imposed,
+so there is no inter-equation fence to delete. It is imposed by the issuing model — one
+thread, blocked at every statement by `dist_eval.wait()` (blocker 2). Upstream needs no
+inter-equation fence because the equations were never going to overlap. The fence's real cost
+is a **per-contraction** tax, and it is what surfaces as §1's 6.8–13.1% dead time. Changing
+who issues the work is the only thing that would help.
+
 **One hazard is absent under this study's contract.** SeQuant's `CacheManager::entry::access()`
 (`cache_manager.hpp:88-96`, upstream, 0 fork commits) mutates `life_c` and moves `data_p` out
 without synchronization — but with `cache_imeds=false`, `cck.ipp:1751-1752` takes the 3-arg
@@ -347,4 +384,6 @@ Ordered by what the findings above actually justify.
    rank: unbatched peak RSS is 19.2 GB (C4H10) and 50.2 GB (C5H12) against a 62 GB node, and
    blocker 4 means K-batching cannot be combined with concurrency.
 4. **Do not pursue the einsum entry fence** as a bounded lever without engaging upstream
-   (§5). Upstream tried and reverted.
+   (§5). Upstream tried and reverted. And note there is no *inter-equation* fence to remove
+   in the first place (§3): the 665 fences per pass are a per-contraction tax, and the
+   equation-level serialization comes from the issuing model, not from a fence.
