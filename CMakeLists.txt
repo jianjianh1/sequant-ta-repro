@@ -51,6 +51,14 @@ if(tiledarray_FOUND)
     target_include_directories(ta_auxbatch_main PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_compile_definitions(ta_auxbatch_main PRIVATE SPTC_OWNING_TOT)
 
+    # One-process/one-product driver for the versioned MPQC-derived isolated
+    # einsum suite in jianjianh1/mpqc-benchmark. Inputs are reconstructed before
+    # timing; the only timed operation is one fence-bracketed TA::einsum.
+    add_executable(ta_einsum_replay src/ta_einsum_replay_main.cpp)
+    target_link_libraries(ta_einsum_replay PRIVATE tiledarray)
+    target_include_directories(ta_einsum_replay PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_definitions(ta_einsum_replay PRIVATE SPTC_OWNING_TOT)
+
     if(SPTC_BUILD_TOOLS AND EXISTS "${CMAKE_SOURCE_DIR}/tools/gen_split/t2_split.cpp")
         # Warm-loop T2 benchmark: persistent cache of the t-independent
         # DF/CSV block (MPQC's volatile/persistent split), SSA-split from
