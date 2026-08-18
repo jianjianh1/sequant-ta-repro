@@ -22,7 +22,7 @@
 /// targeting a fixed tile count per dimension. Replaces the prior
 /// hardcoded-role tiling (occ=4, uocc=50, ri=200 regardless of the actual
 /// molecule or tensor) — confirmed root cause of the OOM/abort failures in
-/// the previous 47-equation sweep (commit 2eb61b2): those constants also
+/// a previous fixed-grid sweep: those constants also
 /// conflated genuinely different-sized dimensions (e.g. the ~114-wide PAO
 /// axis and the ~600-wide per-pair PNO/virtual axis both used "uocc").
 /// Sizing from each tensor's own shape avoids both the conflation and the
@@ -30,27 +30,8 @@
 inline std::vector<std::size_t> adaptive_tile_sizes(
     const std::array<std::size_t, 4>& shape, int rank,
     std::size_t target_tiles_per_dim = 8, bool check_shared_env = true) {
-  // EXPERIMENT (2026-07-20, performance-parity investigation): allow
-  // overriding the target tile count per dimension without touching the
-  // shared default (which every ta-bench tool relies on) -- used to test
-  // whether fewer/larger tiles reduce TA's per-task scheduling overhead
-  // for the native SeQuant generator's ~500-statement whole-residual
-  // computation. Not wired into any other tool's behavior unless the env
-  // var is explicitly set.
-  //
-  // UPDATE (2026-07-26): the default of 8 was the confirmed optimum ONLY
-  // relative to an UNPINNED process (the original sweep predates CPU
-  // affinity pinning). Once the process is pinned to physical cores
-  // (`taskset -c <physical-core-list>`) AND MAD_NUM_THREADS matches the
-  // physical core count, the optimum SHIFTS COARSER --
-  // SPTC_TILES_PER_DIM=6 then beats every value from 5 to 16 (~24-37%
-  // faster than the old default=8 at the same pinned config); 4 still
-  // times out (dense-intermediate-blowup risk on pair-key-adjacent tiling
-  // still applies at that granularity). This mirrors MAD_NUM_THREADS's
-  // own optimum flipping after pinning -- these knobs interact, so
-  // re-sweep this one too after any further scheduling-level change
-  // rather than assuming today's optimum is stable.
-  //
+  // Allow an explicit runtime tile-count override. Tile and thread-count
+  // optima depend on the host and affinity, so tune them together.
   // `check_shared_env=false` lets a caller (e.g. load_one() below, via
   // SPTC_FLAT_TILES_PER_DIM) supply an already-resolved target that
   // bypasses this shared env lookup -- otherwise SPTC_TILES_PER_DIM,
@@ -62,8 +43,7 @@ inline std::vector<std::size_t> adaptive_tile_sizes(
       if (n > 0) target_tiles_per_dim = n;
     }
   }
-  // Coarse-occ override (2026-07-27, performance-parity gap-closer,
-  // env-gated): match real MPQC's occ_tile_size by tiling any dimension
+  // Coarse-occ override: match MPQC's occ_tile_size by tiling any dimension
   // whose extent equals the occupied-space size (SPTC_COARSE_OCC, e.g. 9
   // for ethane frozen-core) at SPTC_OCC_TILE (default 4) instead of the
   // adaptive size. Applied HERE so every tensor's occ-indexed dims — flat
@@ -90,16 +70,8 @@ inline std::vector<std::size_t> adaptive_tile_sizes(
   return sizes;
 }
 
-/// Diagnostic (env-gated SPTC_DUMP_PMAP, 2026-07-28): dump how this array's
-/// nonzero tiles are distributed across MPI ranks. Tests the cold-gap
-/// hypothesis in docs/MPQC_EVALUATION.md §8: MPQC's DF-carrying ToT arrays
-/// inherit the CSV solver's pmap, while the repro takes TA's DEFAULT blocked
-/// pmap here -- if the giant dense DF operand lands on only a few ranks, the
-/// SUMMA of the giant intermediate is load-imbalanced regardless of tile size
-/// (which the occ-tiling sweep already ruled out as the lever). Per-rank tile
-/// counts are pmap-only, so they are identical whether the N ranks sit on N
-/// nodes or one -- run `mpirun -np 16` on a single node to measure. No effect
-/// unless SPTC_DUMP_PMAP is set; no math change.
+/// Diagnostic: when SPTC_DUMP_PMAP is set, dump how nonzero tiles are
+/// distributed across MPI ranks. This changes no tensor values.
 template <typename Array>
 inline void dump_pmap_distribution(TA::World& world, const Array& array,
                                    const std::string& label) {
@@ -136,7 +108,7 @@ inline void dump_pmap_distribution(TA::World& world, const Array& array,
 /// blocked pmap (contiguous tile-ordinal ranges) starves the low ranks: the
 /// frozen-core-zeroed LEADING tiles are the low ordinals, so ranks 0..k get
 /// all-empty ranges and sit idle in the giant DF half-transform's SUMMA
-/// (docs/MPQC_EVALUATION.md §8 verification). RoundRobinPmap maps tile ordinal
+/// in the corresponding distribution experiment. RoundRobinPmap maps tile ordinal
 /// -> ordinal % nproc, so clustered high-ordinal nonzero tiles spread evenly
 /// across every rank. Returns an EMPTY shared_ptr when the knob is unset, which
 /// the DistArray ctor treats as "use the default pmap" -- so the default build

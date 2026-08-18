@@ -23,7 +23,7 @@ builds and runs without them. Build the C++ ones with
 - **`gap_microbench.cpp` + the `gap_microbench` target** — achievable-speedup
   ceiling for the cold CSE37 hotspot (`generated_t2_residual.cpp:487-488`): the
   giant μ̃Κ block done as a hand per-pair BLAS GEMM vs `TA::einsum` on identical
-  data (`-DSPTC_OWNING_TOT`). Backs `docs/GAP_RESEARCH.md` / `gap_ceiling.csv`.
+  data (`-DSPTC_OWNING_TOT`).
   Reads `MAD_NUM_THREADS`, `SPTC_TRIALS`.
 
-See `docs/MPQC_COMPARISON.md` for how these were used and what they showed.
+See `docs/HARNESS_VS_EXPERIMENTS.md` for their non-canonical status.

@@ -18,7 +18,7 @@ in `src/`. Full rationale + the gate inventory: `docs/HARNESS_VS_EXPERIMENTS.md`
 - `../src/aux_k_batching.h` + `../src/generated_t2_residual_auxbatch.cpp` + the `ta_auxbatch_main` target —
   `SPTC_AUX_TARGET_SIZE` aux-Κ batching (needs the fork trange-assertion relaxation).
 - `../tools/gap_microbench.cpp` — the op-487/488 GEMM-ceiling microbenchmark (`SPTC_BUILD_TOOLS=ON`).
-- `../docs/scaling-campaign-data/` — the measurements these produced.
+- Git history — the measurements that motivated and evaluated these experiments.
 
 These are findings, not the product. The product is the cache-free, controllable, multi-backend
 contraction-sequence benchmark in `src/`, `tools/postprocess_generated.py`, and `tools/numpy_runner.py`.

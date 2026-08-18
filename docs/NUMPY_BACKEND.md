@@ -43,8 +43,8 @@ concrete gaps, all in the generator's *per-space* naming/shaping (not in our blo
    proto structure). They emit with too few tags — e.g. the 3-index `C(i,μ̃;a)` and 4-index `C(i,i,μ̃;a)`
    both surface as 2-tag `C_�a`/`C_a�` — so a generated leaf name cannot be mapped back to a specific `.tns`
    file. This is the same limitation the repo already documents at the IR level: **flat einsum cannot fully
-   describe MPQC's CSV/PNO tensor-of-tensor computation** (`docs/CONTRACTION_IR.md`,
-   `docs/MPQC_EVALUATION.md`).
+   describe MPQC's CSV/PNO tensor-of-tensor computation**
+   (`docs/CONTRACTION_IR.md`).
 
 Gaps 1–2 are ordinary generator polish (assign **per-index**, not per-space, tags/extents). Gap 3 is the
 substantive one: a flat-einsum framework has no native ragged-inner-index (ToT) construct, so a *faithful*

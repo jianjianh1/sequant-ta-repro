@@ -21,11 +21,11 @@ block): C2H6 7.4×, C3H8 7.3×, checksum-matched.
 
 C3H8 cold, np=2: baseline 50.8 s vs `SPTC_SCALE_GEMM=1` 70.8 s (**1.4× slower**, checksum-exact). The
 distributed SUMMA splits contracted μ̃ into small K-panels per `strided_oprod_op` call → tiny GEMM
-loses to per-cell AXPY. Single-node-only lever. See `docs/MPQC_MULTIRANK.md`.
+loses to per-cell AXPY. This is a single-node-only experimental lever.
 
 ## What / how
 The μ̃Κ half-transform `I(i,i,μ̃,Κ;a)=Σ_μ̃ g(μ̃,μ̃,Κ)·C(i,i,μ̃;a)` (generated_t2:487) + ~50 cousins have
 the PNO index `a` as a ToT inner spectator, so TA dispatched them as per-cell scalar AXPY, not a GEMM.
 The kernel `arena_strided_scale` gathers each pair's μ̃-run into `Rmat[K×Q]` and issues one GEMM
 `tmp[M×Q]=L[M×K]·Rmat` — MPQC's per-pair GEMM form. See `README.md` for apply/rebuild.
-Full analysis: `docs/MPQC_SINGLE_THREAD.md`.
+The superseded campaign analysis remains available in Git history.

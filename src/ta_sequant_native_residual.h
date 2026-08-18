@@ -1,8 +1,8 @@
 #ifndef SPTC_TA_SEQUANT_NATIVE_RESIDUAL_H
 #define SPTC_TA_SEQUANT_NATIVE_RESIDUAL_H
 
-// Phase 4 (twinkly-dazzling-shamir.md): thin call-site adapter mapping the
-// native SeQuant TiledArrayGenerator's generated closed-shell CSV-CCSD T1/T2
+// Thin call-site adapter mapping the native SeQuant TiledArrayGenerator's
+// generated closed-shell CSV-CCSD T1/T2
 // residual functions onto the existing TATensors leaf struct (populated by
 // load_ta_tensors(), no new loading code needed).
 //
@@ -11,12 +11,11 @@
 // family signature, see tiledarray_generator.hpp), cross-referenced against
 // ta_tensors.h's documented per-file leaf table:
 //   native family "i"  <-> occupied            (same convention both sides)
-//   native family "μ̃"  <-> Phase 1's "m"        (PAO/uocc, pao_uocc space)
-//   native family "Κ"  <-> Phase 1's "k"        (DF/RI auxiliary)
-//   dropped-proto virtual identity "a" <-> Phase 1's "a" (PNO/OSV-restricted virtual)
+//   native family "μ̃"  <-> loader name "m"         (PAO/uocc space)
+//   native family "Κ"  <-> loader name "k"         (DF/RI auxiliary)
+//   dropped-proto virtual identity "a" <-> loader name "a" (PNO/OSV virtual)
 //
-// CORRECTED (2026-07-19, Phase 5 real-data crash investigation,
-// twinkly-dazzling-shamir.md task #21): the claim this comment used to make
+// Correctness note: the claim this comment used to make
 // -- "passing the same underlying array under two differently-ordered
 // parameters is correct, TA transposes as needed" -- is WRONG and was
 // never actually verified against real execution before this note. TA's
@@ -87,19 +86,8 @@ inline TA::TSpArrayD permute_ij_3(const TA::TSpArrayD& src) {
 }
 
 // ---- whole_t1_residual (from generated_R1.cpp, 26-term T1 residual) ------
-// Phase O (2026-07-22, performance-parity investigation): parameter ORDER
-// changed after wiring cross-term CSE (opt::eliminate_common_subexpressions)
-// into the derivation pipeline -- the export traversal now walks a
-// per-summand forest (with CSE-def trees inserted at various points)
-// instead of one whole-Sum tree, so leaves get first-encountered in a
-// different sequence. The NAME<->TATensors-field mapping documented above
-// is unchanged (same leaves, same permute_ij_2/3 needs); only the
-// positional order of this parameter list and the call sites below were
-// updated to match the regenerated generated_R1.cpp/generated_R2.cpp.
-// Parameter order matches the cache-free (SPTC_NO_CSE=1) regeneration
-// (2026-08-03). The NAME<->TATensors-field mapping is unchanged (same leaves,
-// same permute_ij_2/3 needs); only the positional order changed vs the prior
-// CSE'd export. See tools/postprocess_generated.py --print-order.
+// Parameter order matches the cache-free (`SPTC_NO_CSE=1`) generated source.
+// See `tools/postprocess_generated.py --print-order` when regenerating it.
 ArrayToT whole_t1_residual(
     const ArrayToT& C_ap1_uKu,
     const ArrayToT& C_uKu_ap1,
@@ -117,18 +105,9 @@ ArrayToT whole_t1_residual(
     const ArrayToT& C_uKu_ap2);
 
 // ---- whole_t2_residual (from generated_R2.cpp, 55-term T2 residual) ------
-// Phase O third follow-up (2026-07-22): CSE-deduped, same as T1. The
-// rank-mismatched-`+=`-name-collision bug found via bisection (plan
-// file's "Phase O second follow-up") is now fixed by `fix_rank_collision()`
-// in the derivation pipeline (test_csv_ccsd_derivation.cpp), which detects
-// a `+=` whose rank differs from the name's last-tracked rank and isolates
-// that whole colliding span into a freshly-named, dedicated variable
-// (`I_i_i_ap2_ap2_RANKFIX1` here). Verified via 5+ repeated real-data runs
-// (this ta-bench build): zero hangs, checksums matching the known-correct
-// value every time, and T2 measurably FASTER than the pre-CSE baseline
-// (see plan file's "Phase O third follow-up RESULTS" for the number).
-// Parameter order matches the cache-free (SPTC_NO_CSE=1) regeneration
-// (2026-08-03); NAME<->field mapping unchanged, only positional order.
+// `fix_rank_collision()` in the derivation pipeline isolates any `+=` name
+// collision whose expression rank changed. Parameter order matches the
+// cache-free (`SPTC_NO_CSE=1`) generated source.
 ArrayToT whole_t2_residual(
     const ArrayToT& C_ap2_uKu,
     const ArrayToT& C_uKu_ap1,

@@ -9,7 +9,7 @@
 `result.hpp.modified` is the full modified copy of the installed SeQuant header
 `SeQuant/core/eval/backends/tiledarray/result.hpp` (install prefix
 `/users/jianjian/sequant-fork/install-eval`), used while porting the runtime
-evaluator (`src/ta_runtime_eval_main.cpp`; see `docs/MPQC_RUNTIME_EVAL.md`). The
+evaluator (`src/ta_runtime_eval_main.cpp`). The
 install is on ephemeral disk; this copy preserves the changes.
 
 The only change vs upstream is an **`SPTC_PROD_TRACE`-gated diagnostic** — a few

@@ -4,7 +4,7 @@ This repo's purpose is a **framework-agnostic, controllable, cache-free contract
 drive the explicit CSV-CCSD residual sequence (`src/generated_t{1,2}_residual.cpp`) against a tensor
 framework, without cache/reuse, with finer control than MPQC's runtime evaluator (`README.md`).
 
-The perf-parity campaign (docs/MPQC_*.md) added a number of **TiledArray/SeQuant modifications** to chase
+The performance campaign added a number of **TiledArray/SeQuant modifications** to study
 MPQC's runtime speed. Those are legitimate findings, but they are **not part of the benchmark** — a
 hand-optimized backend can't be an honest yardstick for other frameworks. This document draws the line:
 which knobs *are* the benchmark (they shape/measure the sequence without modifying the backend), and which
@@ -34,8 +34,7 @@ SeQuant's evaluator. Using them is the intended workflow.
 
 These **modify the TiledArray backend or SeQuant's runtime evaluator**. They are the campaign's levers.
 Each is env- or CMake-gated OFF by default; with the gate unset the build is byte-identical to stock. They
-live under `patches/` (full headers + `.patch`) so they can be re-applied to the gitignored TA install, and
-their results are in `docs/scaling-campaign-data/`. **Do not enable them for a framework-comparison run** —
+live under `patches/` (full headers + `.patch`) so they can be reapplied when needed. **Do not enable them for a framework-comparison run** —
 they make the TA backend non-representative.
 
 | Gate | Kind | What it modifies | Preserved in | Findings |
@@ -63,4 +62,4 @@ gated off.
 - `README.md` — the canonical benchmark build + run.
 - `patches/{scale_gemm,ce_e_gemm,runtime_eval}/README.md` — the quarantined kernels, with reproduction.
 - `docs/MPQC_REFERENCE_FLAGS.md` — MPQC as a no-rebuild cross-check reference.
-- `docs/scaling-campaign-data/` — the campaign measurements behind §B.
+- Git history — superseded campaign measurements and result narratives.

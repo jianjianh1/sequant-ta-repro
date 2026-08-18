@@ -23,7 +23,7 @@ COMMIT=cd53bd3e04b28519b06a12b743c45824a588fff5
 CLONE_DIR="$SCRIPT_DIR/third_party/tiledarray-cd53bd3-clang"
 PREFIX="$CLONE_DIR/install"
 BUILD="$CLONE_DIR/build"
-JOBS="$(nproc)"
+JOBS="${JOBS:-$(nproc)}"
 
 if [[ -d "$PREFIX/lib/cmake/tiledarray" ]]; then
   echo "TiledArray already installed at $PREFIX — remove it to force a rebuild."

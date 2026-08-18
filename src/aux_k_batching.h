@@ -18,7 +18,7 @@
 // aux-Κ batching for the DF half-transform block (generated_t2_residual.cpp
 // lines 487-491). The repro's port of MPQC's opt-in
 // `make_batched_custom_evaluator` (sequant-fork eval.hpp:1129; wired in
-// cck.ipp:1601-1645), documented as MPQC_EVALUATION.md stage S10.
+// cck.ipp:1601-1645).
 //
 // The block computes, unbatched:
 //     I_ap2_μ̃_Κ[i,i,μ̃,Κ;a1] = einsum(g_μ̃_μ̃_Κ, C_ap2_μ̃)   // giant cell-bound
@@ -35,7 +35,7 @@
 // the unbatched op keeps (cck.ipp:1620-1640).
 //
 // Memory bound, not a speed lever: the per-cell ToT-einsum cost is unchanged
-// (MPQC_COMPARISON.md §11); its payoff is fitting the intermediate that
+// Its payoff is fitting the intermediate that
 // otherwise OOMs at hexane scale.
 // ---------------------------------------------------------------------------
 

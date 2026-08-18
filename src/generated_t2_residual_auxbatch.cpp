@@ -6,7 +6,7 @@
 // (aux_k_batching.h), which streams the aux index Κ in tile-aligned batches so
 // the giant μ̃Κ intermediate is never fully formed. SPTC_AUX_TARGET_SIZE unset
 // or 0 → the original einsum block runs verbatim (bit-identical to the shipped
-// binary). See aux_k_batching.h and MPQC_EVALUATION.md S10.
+// binary). See aux_k_batching.h.
 //
 // Original header:
 // AUTO-GENERATED (2026-07-19) by SeQuant's native TiledArrayGenerator from the
@@ -512,4 +512,3 @@ ArrayToT whole_t2_residual(const ArrayToT& C_μ̃_ap1, const TA::TSpArrayD& g_i_
   }
   return I_i_i_ap2_ap2;
 }
-

@@ -34,8 +34,8 @@ the strided op runs.
 - `ta_tensor_loader.h` — the (separate, refuted) SPTC_COMPACT_COEFFS compaction port + the compaction
   helper. Harmless (gated); kept for the record.  → repo src/ta_tensor_loader.h
 
-NOTE: also mirror the arena_einsum.h/cont_engine.h edits into third_party/tiledarray-cd53bd3/src (the
-non-clang source tree) if rebuilding build-cd53bd3; the two install trees are separate copies.
+Apply the patch to a disposable experimental TiledArray checkout, not to the
+canonical `third_party/tiledarray-cd53bd3-clang` install.
 
 ## Reproduce
 ```
@@ -43,7 +43,7 @@ mpirun -np 1 --bind-to none \
   -x SPTC_COARSE_OCC=9 -x SPTC_OCC_TILE=2 -x SPTC_COARSE_PAD=0 -x SPTC_TILES_PER_DIM=8 \
   -x SPTC_MAD_WAIT_POLICY=yield -x MAD_NUM_THREADS=1 -x SPTC_TRIALS=1 -x SPTC_WARMUP=0 \
   -x SPTC_SCALE_GEMM=1 -x OPENBLAS_NUM_THREADS=1 -x OMP_NUM_THREADS=1 \
-  build-arena-compact/ta_sequant_native_residual_main <leaf_dir>
+  <experiment-build>/ta_sequant_native_residual_main <leaf_dir>
 ```
 Add `-x TA_GEMM_TIMING=1` to see the `[scale-fused]` counter drop to 0 when the path fires.
 

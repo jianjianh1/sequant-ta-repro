@@ -10,7 +10,7 @@ Env-gated (default off) TiledArray-fork kernel that coalesces **op-488**
 `…μ̃,Κ;a * …μ̃;a -> …Κ;a,a`) from per-cell `std::function` dispatch into one batched GEMM per
 result outer cell — the ce+e analogue of the landed `SPTC_SCALE_GEMM` (op-487, `patches/scale_gemm/`).
 This is the concrete "runtime-evaluator work-coalescing / keep-BLAS-fed" piece of the generator/backend
-project (`docs/MPQC_MULTIRANK.md`, `docs/MPQC_PROFILE_DEEP.md`).
+project recorded by this patch directory.
 
 ## What it does
 Under owning-ToT (required for multi-rank), op-488 never reaches a GEMM: TA's arena ce+e-GEMM
@@ -32,7 +32,7 @@ The `.full` files are the complete headers (scale-GEMM + ce+e); the install pref
 `third_party/tiledarray-cd53bd3-clang/install/include/TiledArray/{tensor,expressions}/`. Rebuild any
 owning target (`-DCMAKE_CXX_FLAGS=-DSPTC_OWNING_TOT`) to pick them up.
 
-## Result (RESULTS.md / `docs/scaling-campaign-data/ce_e_gemm.csv`)
+## Result
 - **Correctness:** checksum-exact vs baseline (nnz/sumsq identical, sum to ~13 digits = FP order);
   211435 batched cell-GEMMs, 0 fallbacks. Default (gate off) byte-identical.
 - **Single-node win:** C2H6 1.16×@1thr / **1.27×@8thr**; C3H8 1.09×@1thr / **1.19×@8thr** — larger at 8

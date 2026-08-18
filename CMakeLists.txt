@@ -84,7 +84,7 @@ if(tiledarray_FOUND)
 
     # Runtime-evaluator variant: computes the T2 residual via sequant::evaluate()
     # over the L2 forest (MPQC's runtime path) instead of the static generated
-    # einsum sequence — the definitive control (docs/MPQC_MULTIRANK.md). Gated
+    # einsum sequence — the non-canonical runtime-evaluator control. Gated
     # (pulls the SeQuant lib). Owning-ToT is REQUIRED: the evaluator's
     # cross-thread lazy cleanup dangles arena inner cells.
     option(SPTC_BUILD_RUNTIME_EVAL "Build the sequant::evaluate() runtime T2 driver" OFF)
