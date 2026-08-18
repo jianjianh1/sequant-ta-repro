@@ -1,5 +1,0 @@
-45.08%  madness::ConditionVariable::wait                                                  
-11.13%  TiledArray::detail::fused_scale_t_x_tot_inplace<TiledArray::ArenaTensor<double, bt
-8.63%  syscall_return_via_sysret                                                          
-4.06%  dgemm_kernel_HASWELL                                                               
-2.17%  entry_SYSCALL_64                                                                   

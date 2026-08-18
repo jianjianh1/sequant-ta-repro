@@ -1,7 +1,0 @@
-# FC5 (2026-08-03): MPQC-side counters, ethane single-node under perf stat -a -I 1000 (apptainer+PaRSEC, 8thr). uncore IMC DRAM.
-# CCSD residual is brief (WholeResidualWallTime R=2 = 2.1-3.1s for 55-term T2) so 1s-interval isolation is approximate.
-phase,ipc,dram_gbps,dram_pct_peak,note
-SCF/eqn-gen,1.80,0.3,~1,cache-resident compute (high IPC, near-zero DRAM)
-CCSD-residual,1.1-1.3,2-6.7,6-20,MPQC CCSD compute is NOT memory-bound (low DRAM) — like the repro
-# MPQC T2 residual wall (ethane, 8thr) = 2.1-3.1s vs repro C2H6 8thr ~7s -> MPQC ~2.5-3x faster.
-# FC5 VERDICT: MPQC is ALSO compute-bound not memory-bound (DRAM 6-20% peak). Combined with ABLATION dgemm self-time 44-53%, the both-sides picture: NEITHER side is memory-bound; MPQC's edge is keeping BLAS fed (no starvation), not memory or a different kernel. Validates the unified verdict on the MPQC side.

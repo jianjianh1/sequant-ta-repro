@@ -1,4 +1,0 @@
-molecule,TA_einsum_s,handGEMM_s,ceiling_ratio,hand_GFLOPs,pct_of_peak,checksum_match,note
-C2H6,5.791,2.314,2.50,22.9,0.09,yes~1e-13,CSE37 block (gen_t2:487-488) fenced, 8 threads, node peak ~256 GFLOP/s
-C3H8,24.366,9.399,2.59,26.2,0.10,yes~1e-14,skinny GEMM: per-pair PNO~60 vs contracted μ̃~202
-C4H10,73.36,33.73,2.18,21.8,0.09,yes~1e-13,identical nnz TA vs hand; ceiling is finite+capped

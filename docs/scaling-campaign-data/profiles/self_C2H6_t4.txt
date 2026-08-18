@@ -1,7 +1,0 @@
-26.03%  madness::ConditionVariable::wait                                                  
-17.54%  TiledArray::detail::fused_scale_t_x_tot_inplace<TiledArray::ArenaTensor<double, bt
-9.70%  syscall_return_via_sysret                                                          
-5.35%  dgemm_kernel_HASWELL                                                               
-2.52%  entry_SYSCALL_64                                                                   
-1.78%  __GI_____strtod_l_internal                                                         
-1.73%  std::num_get<char, std::istreambuf_iterator<char, std::char_traits<char> > >::_M_ex

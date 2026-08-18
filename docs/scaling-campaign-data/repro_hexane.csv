@@ -1,2 +1,0 @@
-molecule,np,mode,aux_target_size,T1_s,T2_s,peak_rss_GB,t2_nnz,t2_sum,t2_sumsq,note
-C6H14,1,cold,48,53.8,933.4,27.5,591501,-10.6842642175,39.7679866480,complete uncapped g0 (127M nnz) + aux batching; single-node node3

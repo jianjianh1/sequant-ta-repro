@@ -1,3 +1,0 @@
-molecule,np,aux_target_size,equation,wall_s,peak_rss_kb,nnz,sum,sumsq,max_abs,note
-C6H14,1,48,whole_t1_residual,53.77,13484580,1785,-0.0032926934509418,0.0001484815278633,0.0026908399545659,batched single-rank node3; regenerated complete leaves (C6H14_g0coo g=376x376x906 127M nnz)
-C6H14,1,48,whole_t2_residual,933.44,27482136,591501,-10.684264217531,39.767986648020,0.6093285375587,batched single-rank node3; load 213.9s; peak 27.5GB (unbatched would OOM ~130GB)

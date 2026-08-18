@@ -1,8 +1,0 @@
-molecule,np,backend,T2_cold_s,checksum_t2_sum,note
-C2H6,1,parsec,57.45,-0.000677185441,PaRSEC-repro owning; single-node (no comm) yet 4.6x slower than Pthreads
-C2H6,1,pthreads,12.4,-0.000677185441,repro Pthreads baseline (results.csv)
-C2H6,2,parsec,174.77,-0.000677185441,negative scaling np1->np2 (57->175); tiny-tile cross-node storm
-C2H6,2,pthreads,12.0,-0.000677185441,repro Pthreads baseline
-C4H10,8,parsec,743.5,-7.10587645551,11.6x slower than Pthreads, 64x slower than MPQC; checksum rank-invariant
-C4H10,8,pthreads,64.3,-7.10587645551,repro Pthreads baseline
-C4H10,8,mpqc,11.6,,MPQC PaRSEC (mpqc_mr.csv)
